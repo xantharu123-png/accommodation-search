@@ -47,7 +47,13 @@ class SearchParams(BaseModel):
     guests: int = 2
     min_bedrooms: int = 1
     max_price: int = 300
-    min_rating: float = 4.6
+    # Platform-specific ratings (different scales!)
+    min_rating_airbnb: float = 4.0  # 0-5 scale
+    min_rating_booking: float = 8.0  # 0-10 scale
+    min_rating_hotels: float = 8.0   # 0-10 scale
+    min_rating_expedia: float = 8.0  # 0-10 scale
+    # Backward compatibility
+    min_rating: Optional[float] = None  # Deprecated, use platform-specific
     min_reviews: int = 3
     search_radius_km: int = 5
     platforms: List[str] = ["airbnb", "booking", "hotelscom", "expedia"]
@@ -103,7 +109,7 @@ def run_search(search_id: str, params: SearchParams):
             "results_count": 0
         }
         
-        # Create config
+        # Create config with platform-specific ratings
         config = {
             "search_parameters": {
                 "location": params.location,
@@ -115,7 +121,13 @@ def run_search(search_id: str, params: SearchParams):
             },
             "filters": {
                 "max_price_per_night_chf": params.max_price,
-                "min_rating": params.min_rating,
+                # Platform-specific ratings (each platform uses its own)
+                "min_rating_airbnb": params.min_rating_airbnb,  # 0-5 scale
+                "min_rating_booking": params.min_rating_booking,  # 0-10 scale
+                "min_rating_hotels": params.min_rating_hotels,    # 0-10 scale
+                "min_rating_expedia": params.min_rating_expedia,  # 0-10 scale
+                # Backward compatibility - use Airbnb scale as default
+                "min_rating": params.min_rating or params.min_rating_airbnb,
                 "min_number_of_reviews": params.min_reviews,
                 "superhost_only": False,
                 "instant_book_only": False,

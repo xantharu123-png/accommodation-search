@@ -289,15 +289,55 @@
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="min_rating">⭐ Min. Rating</label>
-                        <input type="number" id="min_rating" name="min_rating" value="4.6" min="0" max="5" step="0.1" required>
+                <!-- Rating Section with Advanced Mode Toggle -->
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <label style="margin: 0;">⭐ Min. Rating</label>
+                        <button type="button" id="toggleAdvancedRating" style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">
+                            🎛️ Advanced
+                        </button>
                     </div>
                     
+                    <!-- Simple Mode (Default) -->
+                    <div id="simpleRatingMode">
+                        <select id="ratingQuality" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 16px;">
+                            <option value="high">🌟 High Quality (Airbnb 4.6+, Booking 9.0+)</option>
+                            <option value="medium" selected>⭐ Medium Quality (Airbnb 4.0+, Booking 8.0+)</option>
+                            <option value="low">✨ Accept Lower (Airbnb 3.5+, Booking 7.0+)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Advanced Mode (Hidden by default) -->
+                    <div id="advancedRatingMode" style="display: none;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
+                            <div>
+                                <label style="font-size: 13px; color: #666; display: block; margin-bottom: 5px;">Airbnb (0-5)</label>
+                                <input type="number" id="rating_airbnb" value="4.0" min="0" max="5" step="0.1" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 13px; color: #666; display: block; margin-bottom: 5px;">Booking.com (0-10)</label>
+                                <input type="number" id="rating_booking" value="8.0" min="0" max="10" step="0.1" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 13px; color: #666; display: block; margin-bottom: 5px;">Hotels.com (0-10)</label>
+                                <input type="number" id="rating_hotels" value="8.0" min="0" max="10" step="0.1" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 13px; color: #666; display: block; margin-bottom: 5px;">Expedia (0-10)</label>
+                                <input type="number" id="rating_expedia" value="8.0" min="0" max="10" step="0.1" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-row">
                     <div class="form-group">
                         <label for="search_radius_km">📏 Suchradius (km)</label>
                         <input type="number" id="search_radius_km" name="search_radius_km" value="5" min="1" max="50" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="max_price">💰 Max. Preis/Nacht (CHF)</label>
+                        <input type="number" id="max_price" name="max_price" value="300" min="0" step="10" required>
                     </div>
                 </div>
                 
@@ -366,6 +406,23 @@
     </div>
     
     <script>
+        // Advanced Rating Toggle
+        let isAdvancedMode = false;
+        
+        document.getElementById('toggleAdvancedRating').addEventListener('click', () => {
+            isAdvancedMode = !isAdvancedMode;
+            document.getElementById('simpleRatingMode').style.display = isAdvancedMode ? 'none' : 'block';
+            document.getElementById('advancedRatingMode').style.display = isAdvancedMode ? 'block' : 'none';
+            document.getElementById('toggleAdvancedRating').textContent = isAdvancedMode ? '🔄 Simple' : '🎛️ Advanced';
+        });
+        
+        // Rating quality presets
+        const ratingPresets = {
+            high: { airbnb: 4.6, booking: 9.0, hotels: 9.0, expedia: 9.0 },
+            medium: { airbnb: 4.0, booking: 8.0, hotels: 8.0, expedia: 8.0 },
+            low: { airbnb: 3.5, booking: 7.0, hotels: 7.0, expedia: 7.0 }
+        };
+        
         // Set min date to today
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('check_in').min = today;
@@ -381,7 +438,7 @@
         document.getElementById('check_out').value = dayAfter.toISOString().split('T')[0];
         
         // API base URL - CHANGE THIS to your deployed backend URL
-        const API_BASE_URL = 'https://accommodation-search-production.up.railway.app';
+        const API_BASE_URL = 'http://localhost:8000';
         
         let currentSearchId = null;
         let statusCheckInterval = null;
@@ -408,13 +465,32 @@
                 parking: { required: amenities.includes('parking') }
             };
             
+            // Get platform-specific ratings
+            let ratings = {};
+            if (isAdvancedMode) {
+                // Advanced mode - use individual values
+                ratings = {
+                    airbnb: parseFloat(document.getElementById('rating_airbnb').value),
+                    booking: parseFloat(document.getElementById('rating_booking').value),
+                    hotels: parseFloat(document.getElementById('rating_hotels').value),
+                    expedia: parseFloat(document.getElementById('rating_expedia').value)
+                };
+            } else {
+                // Simple mode - use preset
+                const quality = document.getElementById('ratingQuality').value;
+                ratings = ratingPresets[quality];
+            }
+            
             const searchParams = {
                 location: formData.get('location'),
                 check_in: formData.get('check_in'),
                 check_out: formData.get('check_out'),
                 guests: parseInt(formData.get('guests')),
                 max_price: parseInt(formData.get('max_price')),
-                min_rating: parseFloat(formData.get('min_rating')),
+                min_rating_airbnb: ratings.airbnb,
+                min_rating_booking: ratings.booking,
+                min_rating_hotels: ratings.hotels,
+                min_rating_expedia: ratings.expedia,
                 min_reviews: 3,
                 search_radius_km: parseInt(formData.get('search_radius_km')),
                 platforms: platforms,
