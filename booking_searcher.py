@@ -251,6 +251,60 @@ class BookingSearcher:
             print(f"❌ Error extracting property: {e}")
             return None
     
+    def get_detail_page_images(self, url: str) -> list:
+        """Get multiple images from Booking detail page"""
+        images = []
+        
+        try:
+            # Open detail page in new tab
+            self.driver.execute_script(f"window.open('{url}', '_blank');")
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            
+            time.sleep(3)  # Wait for page load
+            
+            # Find all gallery images
+            image_selectors = [
+                "img[data-testid='hotel-image']",
+                "a.bh-photo-grid-item img",
+                "div.bh-photo-modal-grid img",
+                "img[class*='hotel_photo']",
+            ]
+            
+            for selector in image_selectors:
+                try:
+                    img_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for img in img_elements[:20]:  # Max 20 images
+                        img_url = img.get_attribute('src')
+                        if img_url and 'http' in img_url and img_url not in images:
+                            # Get high-res version
+                            img_url = img_url.replace('square60', 'max1024x768')
+                            img_url = img_url.replace('square200', 'max1024x768')
+                            img_url = img_url.replace('square240', 'max1024x768')
+                            images.append(img_url)
+                    
+                    if len(images) >= 5:  # Stop if we have enough
+                        break
+                except:
+                    continue
+            
+            # Close tab and switch back
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[0])
+            
+            print(f"📸 {len(images)} Bilder")
+            
+        except Exception as e:
+            print(f"⚠ Image fetch error: {e}")
+            # Make sure we close the tab and switch back
+            try:
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                    self.driver.switch_to.window(self.driver.window_handles[0])
+            except:
+                pass
+        
+        return images
+    
     def search(self):
         """Perform the search"""
         print("🏨 Starte Booking.com Suche...")
@@ -313,6 +367,14 @@ class BookingSearcher:
                 data = self.extract_property_data(prop)
                 
                 if data and data['name'] != "N/A":
+                    # Get more images from detail page (if we only have 1)
+                    if data.get('url') and len(data.get('image_urls', [])) <= 1:
+                        print("🖼️  ", end='', flush=True)
+                        detail_images = self.get_detail_page_images(data['url'])
+                        if detail_images and len(detail_images) > 1:
+                            data['image_urls'] = detail_images
+                            data['image_url'] = detail_images[0]
+                    
                     all_properties.append(data)
                     print(f"✓ {data['name'][:50]}")
                 else:

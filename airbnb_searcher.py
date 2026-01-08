@@ -398,8 +398,7 @@ class AirbnbSearcher:
                 if len(image_urls) > 0:
                     details['image_urls'] = image_urls[:20]  # Max 20
                     print(f"📸 {len(details['image_urls'])} Bilder gefunden")
-                else:
-                    details['image_urls'] = []  # Explicitly empty!
+                # Don't set empty list - keep existing images from listing card!
             except Exception as e:
                 pass
             
