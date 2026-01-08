@@ -83,16 +83,24 @@ class AirbnbSearcher:
             url += f"&price_max={max_price}"
         
         # 🏠 Property Type Filter
+        # Airbnb uses "property_type_id" for specific types
         property_type = self.config['search_parameters'].get('property_type', 'any')
-        if property_type == 'entire_home':
-            # Entire home/apt (Wohnungen, Häuser, Villen)
-            url += "&room_types%5B%5D=Entire%20home%2Fapt"
+        
+        if property_type == 'house':
+            # House (Haus)
+            url += "&property_type_id%5B%5D=1"
+        elif property_type == 'apartment':
+            # Apartment (Wohnung)
+            url += "&property_type_id%5B%5D=2"
+        elif property_type == 'guesthouse':
+            # Guesthouse (Gästehaus)
+            url += "&property_type_id%5B%5D=3"
+        elif property_type == 'hotel':
+            # Hotel
+            url += "&property_type_id%5B%5D=4"
         elif property_type == 'private_room':
-            # Private room
+            # Private room (any property type, but private room)
             url += "&room_types%5B%5D=Private%20room"
-        elif property_type == 'hotel_room':
-            # Hotel room
-            url += "&room_types%5B%5D=Hotel%20room"
         # else: 'any' = no filter (all types)
         
         # AMENITY CODES - Add REQUIRED amenities to URL!
@@ -364,35 +372,53 @@ class AirbnbSearcher:
             
             # 📸 Get image gallery (5-20 images)
             try:
-                # Find all images in the gallery - ONLY real photos, not icons!
-                image_elements = self.driver.find_elements(By.CSS_SELECTOR, "img[src*='pictures']")
+                # Wait a bit more for gallery to load
+                time.sleep(1)
+                
+                # Find all images in the gallery - try multiple selectors!
+                image_selectors = [
+                    "img[src*='pictures']",  # Main gallery images
+                    "img[data-original-uri*='pictures']",  # Lazy loaded
+                    "div[data-section-id='HERO_DEFAULT'] img",  # Hero section
+                    "picture img",  # Picture elements
+                ]
                 
                 image_urls = []
-                for img in image_elements[:25]:  # Check more, filter later
-                    img_url = img.get_attribute('src')
-                    
-                    # FILTER OUT property type icons and platform assets
-                    if img_url and 'pictures' in img_url:
-                        # Skip Airbnb platform assets (house icons, etc.)
-                        if 'airbnb-platform-assets' in img_url or 'AirbnbPlatformAssets' in img_url:
-                            continue
+                for selector in image_selectors:
+                    try:
+                        image_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                         
-                        # Skip if it's a tiny icon (property type illustration)
-                        # Real photos have dimensions in URL like im_w_720, im_w_480, etc.
-                        # Icons often have im_w_200 or smaller
-                        if 'im_w_' in img_url:
-                            # Extract width from URL
-                            import re
-                            width_match = re.search(r'im_w_(\d+)', img_url)
-                            if width_match:
-                                width = int(width_match.group(1))
-                                if width < 400:  # Skip small images (icons)
+                        for img in image_elements[:30]:  # Check more images
+                            img_url = img.get_attribute('src') or img.get_attribute('data-original-uri')
+                            
+                            # FILTER OUT property type icons and platform assets
+                            if img_url and 'pictures' in img_url:
+                                # Skip Airbnb platform assets (house icons, etc.)
+                                if 'airbnb-platform-assets' in img_url or 'AirbnbPlatformAssets' in img_url:
                                     continue
+                                
+                                # Skip if it's a tiny icon (property type illustration)
+                                # Real photos have dimensions in URL like im_w_720, im_w_480, etc.
+                                # Icons often have im_w_200 or smaller
+                                if 'im_w_' in img_url:
+                                    # Extract width from URL
+                                    import re
+                                    width_match = re.search(r'im_w_(\d+)', img_url)
+                                    if width_match:
+                                        width = int(width_match.group(1))
+                                        if width < 300:  # Relaxed from 400 to 300
+                                            continue
+                                
+                                if img_url not in image_urls:
+                                    # Get high-res version
+                                    img_url = img_url.replace('im_w_720', 'im_w_1200').replace('im_w_480', 'im_w_1200').replace('im_w_360', 'im_w_1200')
+                                    image_urls.append(img_url)
                         
-                        if img_url not in image_urls:
-                            # Get high-res version
-                            img_url = img_url.replace('im_w_720', 'im_w_1200').replace('im_w_480', 'im_w_1200')
-                            image_urls.append(img_url)
+                        # If we found enough images, stop searching
+                        if len(image_urls) >= 5:
+                            break
+                    except:
+                        continue
                 
                 # Store images - even if less than 5!
                 if len(image_urls) > 0:
