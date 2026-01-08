@@ -418,6 +418,54 @@ class AirbnbSearcher:
             except:
                 pass
             
+            # 🛏️ Extract bedrooms and guests from listing details
+            try:
+                # Method 1: Look for "X bedrooms · Y guests" pattern in page text
+                page_text = self.driver.find_element(By.TAG_NAME, "body").text
+                
+                # Pattern: "2 bedrooms" or "1 bedroom" or "Studio"
+                bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', page_text, re.IGNORECASE)
+                if bedroom_match:
+                    details['bedrooms'] = int(bedroom_match.group(1))
+                elif 'Studio' in page_text or 'studio' in page_text:
+                    details['bedrooms'] = 0  # Studio = 0 bedrooms
+                
+                # Pattern: "4 guests" or "Gäste: 4"
+                guest_patterns = [
+                    r'(\d+)\s*(?:guest|Gast|Gäste)',
+                    r'(?:guest|Gast|Gäste).*?(\d+)',
+                ]
+                for pattern in guest_patterns:
+                    guest_match = re.search(pattern, page_text, re.IGNORECASE)
+                    if guest_match:
+                        details['max_guests'] = int(guest_match.group(1))
+                        break
+                
+                # Method 2: Try to find it in the overview section
+                try:
+                    overview_section = self.driver.find_element(By.CSS_SELECTOR, "[data-section-id='OVERVIEW_DEFAULT']")
+                    overview_text = overview_section.text
+                    
+                    if 'bedrooms' not in details:
+                        bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', overview_text, re.IGNORECASE)
+                        if bedroom_match:
+                            details['bedrooms'] = int(bedroom_match.group(1))
+                    
+                    if 'max_guests' not in details:
+                        guest_match = re.search(r'(\d+)\s*(?:guest|Gast|Gäste)', overview_text, re.IGNORECASE)
+                        if guest_match:
+                            details['max_guests'] = int(guest_match.group(1))
+                except:
+                    pass
+                
+                # Log what we found
+                if 'bedrooms' in details or 'max_guests' in details:
+                    print(f"🛏️ {details.get('bedrooms', '?')} Schlafzimmer | 👥 {details.get('max_guests', '?')} Gäste")
+                    
+            except Exception as e:
+                print(f"⚠ Fehler beim Extrahieren von Zimmer/Gäste-Info: {e}")
+                pass
+            
             # Get amenities
             try:
                 # Click "Alle Ausstattungsmerkmale anzeigen" button if exists
