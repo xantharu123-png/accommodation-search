@@ -68,6 +68,7 @@ class SearchParams(BaseModel):
     min_rating: Optional[float] = None  # Deprecated, use platform-specific
     min_reviews: int = 3
     search_radius_km: int = 5
+    property_type: str = "any"  # any, entire_home, private_room, hotel_room
     platforms: List[str] = ["airbnb", "booking", "hotelscom", "expedia"]
     amenities: Optional[dict] = None  # Optional amenities filter
 
@@ -129,7 +130,8 @@ def run_search(search_id: str, params: SearchParams):
                 "check_out": params.check_out,
                 "guests": params.guests,
                 "min_bedrooms": params.min_bedrooms,
-                "search_radius_km": params.search_radius_km
+                "search_radius_km": params.search_radius_km,
+                "property_type": params.property_type
             },
             "filters": {
                 "max_price_per_night_chf": params.max_price,

@@ -145,12 +145,22 @@ class BookingSearcher:
             try:
                 location_elem = property_card.find_element(By.CSS_SELECTOR, "[data-testid='distance']")
                 location_text = location_elem.text.strip()
-                data['location'] = location_text
                 
-                # Extract distance in km
+                # Extract distance and convert miles to km if needed
                 km_match = re.search(r'(\d+[,.]?\d*)\s*km', location_text)
+                miles_match = re.search(r'(\d+[,.]?\d*)\s*(?:mile|miles)', location_text)
+                
                 if km_match:
-                    data['distance_km'] = float(km_match.group(1).replace(',', '.'))
+                    distance_km = float(km_match.group(1).replace(',', '.'))
+                    data['location'] = f"{distance_km:.1f} km vom Zentrum"
+                    data['distance_km'] = distance_km
+                elif miles_match:
+                    distance_miles = float(miles_match.group(1).replace(',', '.'))
+                    distance_km = distance_miles * 1.60934  # Convert to km
+                    data['location'] = f"{distance_km:.1f} km vom Zentrum"
+                    data['distance_km'] = distance_km
+                else:
+                    data['location'] = location_text
             except:
                 pass
             
@@ -197,26 +207,39 @@ class BookingSearcher:
             
             # Images - SCRAPE MULTIPLE (5-20)!
             try:
+                # Try to get more images by hovering over the property card
+                try:
+                    # Move mouse to property to trigger gallery
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(property_card).perform()
+                    time.sleep(0.5)  # Wait for gallery to load
+                except:
+                    pass
+                
                 # Find all images in the property card
-                image_elements = property_card.find_elements(By.CSS_SELECTOR, "img[data-testid='image']")
+                image_elements = property_card.find_elements(By.CSS_SELECTOR, "img[data-testid='image'], img.bh-photo-grid-item, img[class*='gallery']")
                 
                 image_urls = []
                 for img in image_elements[:20]:  # Max 20 images
                     img_url = img.get_attribute('src')
-                    if img_url and img_url not in image_urls:
+                    if img_url and img_url not in image_urls and 'http' in img_url:
                         # Get high-res version (replace thumbnails)
                         img_url = img_url.replace('square60', 'max1024x768')
                         img_url = img_url.replace('square240', 'max1024x768')
+                        img_url = img_url.replace('square200', 'max1024x768')
                         image_urls.append(img_url)
                 
                 if image_urls:
                     data['image_urls'] = image_urls
                     data['image_url'] = image_urls[0]  # First as fallback
+                    print(f"📸 {len(image_urls)} Bilder gefunden")
                 else:
                     # Fallback to single image
                     try:
                         img_elem = property_card.find_element(By.CSS_SELECTOR, "img[data-testid='image']")
                         data['image_url'] = img_elem.get_attribute('src')
+                        data['image_urls'] = [data['image_url']]
                     except:
                         pass
             except:

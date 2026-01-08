@@ -82,10 +82,18 @@ class AirbnbSearcher:
         if max_price:
             url += f"&price_max={max_price}"
         
-        # 🏠 WICHTIG: Nur ganze Unterkünfte (keine Zimmer!)
-        # Filtert: Wohnungen, Häuser, Villen, Gästehäuser etc.
-        # Entfernt: Privatzimmer, geteilte Zimmer
-        url += "&room_types%5B%5D=Entire%20home%2Fapt"
+        # 🏠 Property Type Filter
+        property_type = self.config['search_parameters'].get('property_type', 'any')
+        if property_type == 'entire_home':
+            # Entire home/apt (Wohnungen, Häuser, Villen)
+            url += "&room_types%5B%5D=Entire%20home%2Fapt"
+        elif property_type == 'private_room':
+            # Private room
+            url += "&room_types%5B%5D=Private%20room"
+        elif property_type == 'hotel_room':
+            # Hotel room
+            url += "&room_types%5B%5D=Hotel%20room"
+        # else: 'any' = no filter (all types)
         
         # AMENITY CODES - Add REQUIRED amenities to URL!
         # This filters at SOURCE = much faster & more reliable!
@@ -183,6 +191,7 @@ class AirbnbSearcher:
             try:
                 subtitle = listing_element.find_element(By.CSS_SELECTOR, "[data-testid='listing-card-subtitle']").text
                 data['subtitle'] = subtitle
+                data['location'] = subtitle  # Also store as 'location' for consistency
                 
                 # Distance will be calculated by Google Maps later
                 # For now, just set to 0 (unknown)
@@ -190,6 +199,7 @@ class AirbnbSearcher:
                 
             except:
                 data['subtitle'] = "N/A"
+                data['location'] = "N/A"
                 data['distance_km'] = 0
             
             # Price - try multiple selectors
@@ -426,43 +436,47 @@ class AirbnbSearcher:
             
             # 🛏️ Extract bedrooms and guests from listing details
             try:
-                # Method 1: Look for "X bedrooms · Y guests" pattern in page text
-                page_text = self.driver.find_element(By.TAG_NAME, "body").text
-                
-                # Pattern: "2 bedrooms" or "1 bedroom" or "Studio"
-                bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', page_text, re.IGNORECASE)
-                if bedroom_match:
-                    details['bedrooms'] = int(bedroom_match.group(1))
-                elif 'Studio' in page_text or 'studio' in page_text:
-                    details['bedrooms'] = 0  # Studio = 0 bedrooms
-                
-                # Pattern: "4 guests" or "Gäste: 4"
-                guest_patterns = [
-                    r'(\d+)\s*(?:guest|Gast|Gäste)',
-                    r'(?:guest|Gast|Gäste).*?(\d+)',
-                ]
-                for pattern in guest_patterns:
-                    guest_match = re.search(pattern, page_text, re.IGNORECASE)
+                # Method 1: Look in the title/header area (most reliable!)
+                try:
+                    # Airbnb shows "2 guests · 1 bedroom · 1 bed · 1 bath" near title
+                    header_info = self.driver.find_element(By.CSS_SELECTOR, "div[data-section-id='TITLE_DEFAULT']")
+                    header_text = header_info.text
+                    
+                    # Extract guests
+                    guest_match = re.search(r'(\d+)\s*(?:guest|Gast|Gäste)', header_text, re.IGNORECASE)
                     if guest_match:
                         details['max_guests'] = int(guest_match.group(1))
-                        break
-                
-                # Method 2: Try to find it in the overview section
-                try:
-                    overview_section = self.driver.find_element(By.CSS_SELECTOR, "[data-section-id='OVERVIEW_DEFAULT']")
-                    overview_text = overview_section.text
                     
-                    if 'bedrooms' not in details:
-                        bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', overview_text, re.IGNORECASE)
-                        if bedroom_match:
-                            details['bedrooms'] = int(bedroom_match.group(1))
-                    
-                    if 'max_guests' not in details:
-                        guest_match = re.search(r'(\d+)\s*(?:guest|Gast|Gäste)', overview_text, re.IGNORECASE)
-                        if guest_match:
-                            details['max_guests'] = int(guest_match.group(1))
+                    # Extract bedrooms
+                    bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', header_text, re.IGNORECASE)
+                    if bedroom_match:
+                        details['bedrooms'] = int(bedroom_match.group(1))
+                    elif 'Studio' in header_text or 'studio' in header_text:
+                        details['bedrooms'] = 0
                 except:
                     pass
+                
+                # Method 2: Look for "X bedrooms · Y guests" pattern in full page text
+                if 'bedrooms' not in details or 'max_guests' not in details:
+                    page_text = self.driver.find_element(By.TAG_NAME, "body").text
+                    
+                    if 'bedrooms' not in details:
+                        bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', page_text, re.IGNORECASE)
+                        if bedroom_match:
+                            details['bedrooms'] = int(bedroom_match.group(1))
+                        elif 'Studio' in page_text or 'studio' in page_text:
+                            details['bedrooms'] = 0
+                    
+                    if 'max_guests' not in details:
+                        guest_patterns = [
+                            r'(\d+)\s*(?:guest|Gast|Gäste)',
+                            r'(?:guest|Gast|Gäste).*?(\d+)',
+                        ]
+                        for pattern in guest_patterns:
+                            guest_match = re.search(pattern, page_text, re.IGNORECASE)
+                            if guest_match:
+                                details['max_guests'] = int(guest_match.group(1))
+                                break
                 
                 # Log what we found
                 if 'bedrooms' in details or 'max_guests' in details:
