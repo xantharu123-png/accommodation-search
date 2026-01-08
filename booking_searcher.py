@@ -81,8 +81,27 @@ class BookingSearcher:
             max_price = filters['max_price']
             url += f"&price=CHF-0-CHF-{max_price}"
         
-        # Entire place (apartments/homes) - CORRECT IDs
-        url += "&nflt=ht_id%3D201%3Bht_id%3D204%3Bht_id%3D220"  # Apartments, Holiday Homes, Chalets
+        # 🏠 Property Type Filter - MAPPED from user selection!
+        property_type = params.get('property_type', 'any')
+        
+        if property_type == 'house':
+            # Haus → Ferienhäuser (214) + Chalets (220)
+            url += "&nflt=ht_id%3D214%3Bht_id%3D220"
+        elif property_type == 'apartment':
+            # Wohnung → Ferienwohnungen (201)
+            url += "&nflt=ht_id%3D201"
+        elif property_type == 'guesthouse':
+            # Gästehaus → Bed & Breakfasts (208) + Pensionen (203)
+            url += "&nflt=ht_id%3D208%3Bht_id%3D203"
+        elif property_type == 'hotel':
+            # Hotel → Hotels (204)
+            url += "&nflt=ht_id%3D204"
+        elif property_type == 'private_room':
+            # Private room → all types (no specific filter on Booking)
+            pass
+        else:
+            # 'any' → Alle Ferienunterkünfte (Apartments, Homes, Chalets)
+            url += "&nflt=ht_id%3D201%3Bht_id%3D214%3Bht_id%3D220"
         
         # Rating filter (Booking uses 1-10 scale)
         min_rating = filters.get('min_rating', 0)
