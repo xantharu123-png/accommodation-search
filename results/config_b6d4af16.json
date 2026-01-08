@@ -1,0 +1,50 @@
+{
+  "search_parameters": {
+    "location": "Paris",
+    "check_in": "2026-01-08",
+    "check_out": "2026-01-09",
+    "guests": 2,
+    "min_bedrooms": 1,
+    "search_radius_km": 5
+  },
+  "filters": {
+    "max_price_per_night_chf": 300,
+    "min_rating": 4.6,
+    "min_number_of_reviews": 3,
+    "superhost_only": false,
+    "instant_book_only": false,
+    "max_price": 300,
+    "min_reviews": 3
+  },
+  "amenities": {
+    "private_pool": {
+      "required": false
+    },
+    "private_whirlpool": {
+      "required": false
+    },
+    "private_sauna": {
+      "required": false
+    },
+    "fireplace": {
+      "required": false
+    },
+    "parking": {
+      "required": false
+    }
+  },
+  "location_settings": {
+    "radius_km": 5,
+    "use_exact_location": false
+  },
+  "output": {
+    "max_results": 50,
+    "max_pages": 15,
+    "save_to_csv": true,
+    "save_to_html": true
+  },
+  "scraping_settings": {
+    "headless": true,
+    "wait_time_seconds": 3
+  }
+}

@@ -1,0 +1,88 @@
+🚀 WEB APP INSTALLATION GUIDE
+============================================================
+
+📦 SCHRITT 1: ORDNER ERSTELLEN
+============================================================
+Erstelle diesen Ordner:
+C:\Users\miros\Desktop\Airbnb Suche\webapp\
+
+
+📥 SCHRITT 2: FILES KOPIEREN
+============================================================
+Kopiere ALLE diese Files in den webapp\ Ordner:
+
+WEB APP FILES (neu):
+✅ app.py
+✅ index.html
+✅ requirements.txt
+✅ railway.json
+✅ Aptfile
+✅ webapp_gitignore.txt (umbenennen zu .gitignore)
+✅ WEBAPP_README.md
+
+SCRAPER FILES (von vorher):
+✅ airbnb_searcher.py
+✅ booking_searcher.py
+✅ hotelscom_searcher.py
+✅ expedia_searcher.py
+✅ combined_search.py
+✅ google_maps_distance.py
+
+
+🚀 SCHRITT 3: LOKAL TESTEN
+============================================================
+1. Öffne PowerShell/CMD:
+   cd C:\Users\miros\Desktop\Airbnb Suche\webapp
+
+2. Install dependencies:
+   pip install -r requirements.txt
+
+3. Start Backend (Terminal 1):
+   python app.py
+   
+   → Backend läuft auf: http://localhost:8000
+
+4. Start Frontend (Terminal 2):
+   python -m http.server 3000
+   
+   → Frontend läuft auf: http://localhost:3000
+
+5. Öffne Browser:
+   http://localhost:3000
+   
+   🎉 FERTIG!
+
+
+🌐 SCHRITT 4: ONLINE DEPLOYEN (Optional)
+============================================================
+Backend auf Railway:
+1. npm install -g @railway/cli
+2. railway login
+3. cd webapp
+4. railway init
+5. railway up
+6. railway domain  → Speichere URL!
+
+Frontend auf Netlify:
+1. Gehe zu netlify.com
+2. Editiere index.html Zeile 193:
+   const API_BASE_URL = 'https://your-app.railway.app';
+3. Drag & drop index.html zu Netlify
+4. Fertig! 🎉
+
+
+❓ TROUBLESHOOTING
+============================================================
+Problem: "Module not found"
+Lösung: pip install -r requirements.txt
+
+Problem: "Port already in use"
+Lösung: Ändere Port: python -m http.server 3001
+
+Problem: "CORS error"
+Lösung: Backend & Frontend müssen beide laufen!
+
+
+📞 SUPPORT
+============================================================
+Fragen? Schreib mir! 😊

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⭐ Meine Favoriten</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+        
+        .nav {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .nav a {
+            color: white;
+            text-decoration: none;
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .lists-container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+        }
+        
+        .list-selector {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        .list-button {
+            padding: 12px 24px;
+            border: 2px solid #667eea;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .list-button:hover {
+            background: #f0f4ff;
+        }
+        
+        .list-button.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .list-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #da190b;
+        }
+        
+        .favorites-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .favorite-card {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+        
+        .favorite-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+        
+        .favorite-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        
+        .favorite-content {
+            padding: 20px;
+        }
+        
+        .favorite-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .favorite-price {
+            font-size: 24px;
+            color: #4CAF50;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .favorite-rating {
+            color: #ff9800;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .favorite-platform {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .favorite-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .favorite-actions button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-view {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-delete {
+            background: #f44336;
+            color: white;
+        }
+        
+        .analysis-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f0f7ff;
+            border-radius: 8px;
+        }
+        
+        .analysis-section h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⭐ Meine Favoriten</h1>
+            <p>Verwalte deine gespeicherten Unterkünfte</p>
+        </div>
+        
+        <div class="nav">
+            <a href="/">🏠 Zurück zur Suche</a>
+        </div>
+        
+        <div class="lists-container">
+            <h2>📋 Favoritenlisten</h2>
+            <div id="listSelector" class="list-selector">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Lade Listen...</p>
+                </div>
+            </div>
+            
+            <div class="list-actions">
+                <button class="btn btn-primary" onclick="analyzeSelected()">
+                    🤖 AI Analyse starten
+                </button>
+                <button class="btn btn-danger" onclick="deleteSelected()">
+                    🗑️ Ausgewählte löschen
+                </button>
+            </div>
+        </div>
+        
+        <div id="favoritesContainer">
+            <!-- Favorites will be loaded here -->
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'https://accommodation-search-production.up.railway.app';
+        let currentList = null;
+        let allLists = [];
+        let selectedFavorites = new Set();
+        
+        // Load lists on page load
+        window.addEventListener('load', () => {
+            loadLists();
+        });
+        
+        async function loadLists() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/favorites/lists`);
+                const data = await response.json();
+                
+                allLists = data.lists;
+                
+                const container = document.getElementById('listSelector');
+                
+                if (allLists.length === 0) {
+                    container.innerHTML = '<p class="empty-state">Noch keine Favoriten vorhanden. Starte eine Suche und füge Listings hinzu!</p>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                allLists.forEach(listName => {
+                    const btn = document.createElement('button');
+                    btn.className = 'list-button';
+                    btn.textContent = listName;
+                    btn.onclick = () => selectList(listName);
+                    container.appendChild(btn);
+                });
+                
+                // Auto-select first list
+                selectList(allLists[0]);
+                
+            } catch (error) {
+                console.error('Error loading lists:', error);
+                document.getElementById('listSelector').innerHTML = 
+                    '<p class="empty-state">Fehler beim Laden der Listen</p>';
+            }
+        }
+        
+        async function selectList(listName) {
+            currentList = listName;
+            selectedFavorites.clear();
+            
+            // Update active button
+            document.querySelectorAll('.list-button').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent === listName);
+            });
+            
+            await loadFavorites(listName);
+        }
+        
+        async function loadFavorites(listName) {
+            const container = document.getElementById('favoritesContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Lade Favoriten...</p></div>';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/favorites?list_name=${encodeURIComponent(listName)}`);
+                const data = await response.json();
+                
+                if (data.favorites.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><h3>Keine Favoriten in dieser Liste</h3></div>';
+                    return;
+                }
+                
+                container.innerHTML = '<div class="favorites-grid"></div>';
+                const grid = container.querySelector('.favorites-grid');
+                
+                data.favorites.forEach(fav => {
+                    const card = createFavoriteCard(fav);
+                    grid.appendChild(card);
+                });
+                
+            } catch (error) {
+                console.error('Error loading favorites:', error);
+                container.innerHTML = '<div class="empty-state">Fehler beim Laden der Favoriten</div>';
+            }
+        }
+        
+        function createFavoriteCard(favorite) {
+            const listing = favorite.listing_data;
+            const card = document.createElement('div');
+            card.className = 'favorite-card';
+            card.dataset.favoriteId = favorite.id;
+            
+            const imageUrl = listing.image_urls && listing.image_urls[0] 
+                ? listing.image_urls[0] 
+                : 'https://via.placeholder.com/400x200?text=No+Image';
+            
+            card.innerHTML = `
+                <img src="${imageUrl}" alt="${listing.title || 'Unterkunft'}">
+                <div class="favorite-content">
+                    <input type="checkbox" onchange="toggleSelection(${favorite.id})" style="float: right;">
+                    <div class="favorite-platform">${listing.platform || 'Unknown'}</div>
+                    <div class="favorite-title">${listing.title || 'Unterkunft'}</div>
+                    <div class="favorite-price">${listing.price_per_night || 'N/A'} CHF / Nacht</div>
+                    <div class="favorite-rating">⭐ ${listing.rating || 'N/A'} (${listing.number_of_reviews || 0} Bewertungen)</div>
+                    <div class="favorite-actions">
+                        <button class="btn-view" onclick="window.open('${listing.url}', '_blank')">
+                            🔗 Ansehen
+                        </button>
+                        <button class="btn-delete" onclick="deleteFavorite(${favorite.id})">
+                            🗑️ Löschen
+                        </button>
+                    </div>
+                    <div id="analysis-${favorite.id}" class="analysis-section" style="display: none;"></div>
+                </div>
+            `;
+            
+            return card;
+        }
+        
+        function toggleSelection(favoriteId) {
+            if (selectedFavorites.has(favoriteId)) {
+                selectedFavorites.delete(favoriteId);
+            } else {
+                selectedFavorites.add(favoriteId);
+            }
+        }
+        
+        async function analyzeSelected() {
+            if (selectedFavorites.size === 0) {
+                alert('Bitte wähle mindestens einen Favoriten aus!');
+                return;
+            }
+            
+            const favoriteIds = Array.from(selectedFavorites);
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/favorites/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ favorite_ids: favoriteIds })
+                });
+                
+                const data = await response.json();
+                
+                data.results.forEach(result => {
+                    displayAnalysis(result.favorite_id, result.analysis, result.cached);
+                });
+                
+                alert(`✅ Analyse abgeschlossen für ${data.count} Favoriten!`);
+                
+            } catch (error) {
+                console.error('Error analyzing favorites:', error);
+                alert('❌ Fehler bei der Analyse');
+            }
+        }
+        
+        function displayAnalysis(favoriteId, analysis, cached) {
+            const container = document.getElementById(`analysis-${favoriteId}`);
+            container.style.display = 'block';
+            
+            let html = `<h4>🤖 AI Review-Analyse ${cached ? '(Cached)' : ''}</h4>`;
+            
+            if (analysis.summary) {
+                html += `<p><strong>Zusammenfassung:</strong> ${analysis.summary}</p>`;
+            }
+            
+            if (analysis.positive && analysis.positive.length > 0) {
+                html += '<p><strong>✅ Positiv:</strong></p><ul>';
+                analysis.positive.forEach(p => html += `<li>${p}</li>`);
+                html += '</ul>';
+            }
+            
+            if (analysis.negative && analysis.negative.length > 0) {
+                html += '<p><strong>⚠️ Zu beachten:</strong></p><ul>';
+                analysis.negative.forEach(n => html += `<li>${n}</li>`);
+                html += '</ul>';
+            }
+            
+            if (analysis.cleanliness || analysis.location || analysis.value) {
+                html += '<p><strong>Bewertungen:</strong></p>';
+                if (analysis.cleanliness) html += `<span>🧹 ${analysis.cleanliness}</span> `;
+                if (analysis.location) html += `<span>📍 ${analysis.location}</span> `;
+                if (analysis.value) html += `<span>💰 ${analysis.value}</span>`;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        async function deleteFavorite(favoriteId) {
+            if (!confirm('Wirklich löschen?')) return;
+            
+            try {
+                await fetch(`${API_BASE_URL}/api/favorites/${favoriteId}`, {
+                    method: 'DELETE'
+                });
+                
+                // Reload current list
+                await loadFavorites(currentList);
+                
+            } catch (error) {
+                console.error('Error deleting favorite:', error);
+                alert('❌ Fehler beim Löschen');
+            }
+        }
+        
+        async function deleteSelected() {
+            if (selectedFavorites.size === 0) {
+                alert('Bitte wähle mindestens einen Favoriten aus!');
+                return;
+            }
+            
+            if (!confirm(`${selectedFavorites.size} Favoriten löschen?`)) return;
+            
+            try {
+                const promises = Array.from(selectedFavorites).map(id => 
+                    fetch(`${API_BASE_URL}/api/favorites/${id}`, { method: 'DELETE' })
+                );
+                
+                await Promise.all(promises);
+                selectedFavorites.clear();
+                
+                // Reload
+                await loadFavorites(currentList);
+                
+            } catch (error) {
+                console.error('Error deleting favorites:', error);
+                alert('❌ Fehler beim Löschen');
+            }
+        }
+    </script>
+</body>
+</html>
