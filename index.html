@@ -437,8 +437,8 @@
         document.getElementById('check_in').value = tomorrow.toISOString().split('T')[0];
         document.getElementById('check_out').value = dayAfter.toISOString().split('T')[0];
         
-        // API base URL - CHANGE THIS to your deployed backend URL
-        const API_BASE_URL = 'http://localhost:8000';
+        // API base URL - Railway Production
+        const API_BASE_URL = 'https://accommodation-search-production.up.railway.app';
         
         let currentSearchId = null;
         let statusCheckInterval = null;

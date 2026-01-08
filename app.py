@@ -36,6 +36,18 @@ app.add_middleware(
 RESULTS_DIR = Path("results")
 RESULTS_DIR.mkdir(exist_ok=True)
 
+# Cleanup old HTML files on startup
+@app.on_event("startup")
+async def startup_cleanup():
+    """Delete old search result HTML files on startup"""
+    try:
+        for html_file in RESULTS_DIR.glob("search_results_*.html"):
+            html_file.unlink()
+            print(f"🗑️ Deleted old HTML: {html_file.name}")
+        print("✅ Startup cleanup complete!")
+    except Exception as e:
+        print(f"⚠️ Cleanup error: {e}")
+
 # In-memory storage for search status (use Redis in production)
 search_status = {}
 
