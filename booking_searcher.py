@@ -36,10 +36,16 @@ class BookingSearcher:
         if self.config.get('scraping_settings', {}).get('headless', True):
             chrome_options.add_argument('--headless=new')
         
+        # Essential args for Docker/Railway
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-software-rasterizer')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-setuid-sandbox')
+        
         chrome_options.add_argument(f"user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--lang=de-CH')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
