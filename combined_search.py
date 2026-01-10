@@ -114,6 +114,9 @@ class CombinedAccommodationSearch:
                 'url': listing.get('url', ''),
                 'distance_km': listing.get('real_distance_km', 0),
                 'image_url': listing.get('image_url', ''),
+                'image_urls': listing.get('image_urls', []),  # ✅ FIX: Multi-images
+                'bedrooms': listing.get('bedrooms', 'N/A'),  # ✅ FIX: Bedrooms
+                'max_guests': listing.get('max_guests', 'N/A'),  # ✅ FIX: Guests
             })
         
         # Booking.com
@@ -128,6 +131,9 @@ class CombinedAccommodationSearch:
                 'url': listing.get('url', ''),
                 'distance_km': listing.get('distance_km', 0),
                 'image_url': listing.get('image_url', ''),
+                'image_urls': listing.get('image_urls', []),  # ✅ FIX: Multi-images
+                'bedrooms': 'N/A',  # Booking doesn't have this
+                'max_guests': 'N/A',  # Booking doesn't have this
             })
         
         # Hotels.com
@@ -142,6 +148,9 @@ class CombinedAccommodationSearch:
                 'url': listing.get('url', ''),
                 'distance_km': listing.get('distance_km', 0),
                 'image_url': listing.get('image_url', ''),
+                'image_urls': listing.get('image_urls', []),  # ✅ FIX: Multi-images
+                'bedrooms': 'N/A',
+                'max_guests': 'N/A',
             })
         
         # Expedia
@@ -156,6 +165,9 @@ class CombinedAccommodationSearch:
                 'url': listing.get('url', ''),
                 'distance_km': listing.get('distance_km', 0),
                 'image_url': listing.get('image_url', ''),
+                'image_urls': listing.get('image_urls', []),  # ✅ FIX: Multi-images
+                'bedrooms': 'N/A',
+                'max_guests': 'N/A',
             })
         
         if not combined_data:
@@ -375,7 +387,15 @@ class CombinedAccommodationSearch:
         <p><span class="price">CHF {row['price']}</span> pro Nacht</p>
         <p><span class="rating">⭐ {row.get('rating', 'N/A')}</span> ({row.get('reviews', 0)} Bewertungen)</p>
         <p>📏 Distanz: {row.get('distance_km', 'N/A')} km</p>
-        <p><a href="{row['url']}" target="_blank">🔗 Ansehen auf {platform_name}</a></p>
+"""
+            # Add bedrooms/guests for Airbnb
+            if row.get('bedrooms') != 'N/A' or row.get('max_guests') != 'N/A':
+                bedrooms_text = row.get('bedrooms', 'N/A')
+                guests_text = row.get('max_guests', 'N/A')
+                html += f"""        <p>🛏️ {bedrooms_text} Schlafzimmer | 👥 {guests_text} Gäste</p>
+"""
+            
+            html += f"""        <p><a href="{row['url']}" target="_blank">🔗 Ansehen auf {platform_name}</a></p>
     </div>
 """
         

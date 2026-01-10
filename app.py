@@ -208,8 +208,8 @@ def run_search(search_id: str, params: SearchParams):
             
             if "hotelscom" in params.platforms:
                 search_status[search_id]["progress"] = "Suche auf Hotels.com..."
-                from hotelscom_searcher import HotelscomSearcher
-                hotelscom = HotelscomSearcher(str(config_path))
+                from hotelscom_searcher import HotelsComSearcher
+                hotelscom = HotelsComSearcher(str(config_path))
                 hotelscom.search()
                 all_results.extend(hotelscom.results)
             
