@@ -116,6 +116,16 @@ class AnalyzeRequest(BaseModel):
 def run_search(search_id: str, params: SearchParams):
     """Run accommodation search in background"""
     try:
+        # 🗑️ CLEANUP: Delete old HTML files before starting new search
+        try:
+            for old_html in RESULTS_DIR.glob("search_results_*.html"):
+                # Keep only this search's results
+                if search_id not in old_html.name:
+                    old_html.unlink()
+                    print(f"🗑️ Cleaned up: {old_html.name}")
+        except Exception as e:
+            print(f"⚠️ Cleanup warning: {e}")
+        
         search_status[search_id] = {
             "status": "running",
             "progress": "Initialisiere Suche...",
