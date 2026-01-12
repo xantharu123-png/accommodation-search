@@ -36,14 +36,6 @@ class HotelsComSearcher:
         if self.config.get('scraping_settings', {}).get('headless', True):
             chrome_options.add_argument('--headless=new')
         
-        
-        # Essential args for Docker/Railway
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--disable-software-rasterizer')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--disable-setuid-sandbox')
         chrome_options.add_argument(f"user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -215,24 +207,97 @@ class HotelsComSearcher:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             
-            # Find hotels - NEW Swiss Hotels.com selectors
+            # Find hotels - Try MULTIPLE selector strategies
             hotels = []
-            selectors = [
-                "div[data-stid='lodging-card-responsive']",  # Main card
-                "div[class*='uitk-card']",  # Card container
-                "article",  # Article tags
+            
+            # Strategy 1: Modern data-stid selectors
+            selectors_strategy1 = [
+                "div[data-stid='lodging-card-responsive']",
                 "div[data-testid='property-card']",
             ]
             
+            # Strategy 2: Class-based selectors
+            selectors_strategy2 = [
+                "div[class*='uitk-card']",
+                "div[class*='property-card']",
+                "div[class*='hotel-card']",
+            ]
+            
+            # Strategy 3: Semantic HTML
+            selectors_strategy3 = [
+                "article",
+                "section[role='article']",
+                "li[role='article']",
+            ]
+            
+            # Strategy 4: Generic containers with links
+            selectors_strategy4 = [
+                "a[href*='Hotel-Information']",
+                "a[href*='/h/']",
+            ]
+            
             print("🔍 Suche Hotels mit neuen Selectors...")
-            for selector in selectors:
+            
+            # Try each strategy
+            all_strategies = [
+                ("Strategy 1 (data-stid)", selectors_strategy1),
+                ("Strategy 2 (classes)", selectors_strategy2),
+                ("Strategy 3 (semantic)", selectors_strategy3),
+                ("Strategy 4 (links)", selectors_strategy4),
+            ]
+            
+            for strategy_name, selectors in all_strategies:
+                for selector in selectors:
+                    try:
+                        found = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                        if len(found) > 3:  # Need at least 4 elements
+                            hotels = found
+                            print(f"✓ {len(hotels)} Elemente gefunden ({strategy_name}: {selector})\n")
+                            break
+                    except Exception as e:
+                        continue
+                
+                if hotels:
+                    break
+            
+            # Fallback: Get ALL links and filter
+            if not hotels:
+                print("⚠ Kein Selector funktioniert! Versuche Fallback...")
                 try:
-                    hotels = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if len(hotels) > 5:
-                        print(f"✓ {len(hotels)} Hotels gefunden (Selector: {selector})\n")
-                        break
-                except:
-                    continue
+                    # Get page HTML and check what's actually there
+                    page_source = self.driver.page_source
+                    
+                    # Save for debugging
+                    with open('/tmp/hotels_com_debug.html', 'w', encoding='utf-8') as f:
+                        f.write(page_source)
+                    print("📝 Debug HTML saved to /tmp/hotels_com_debug.html")
+                    
+                    # Check if we're blocked
+                    if 'captcha' in page_source.lower() or 'blocked' in page_source.lower():
+                        print("🚫 BLOCKED! Hotels.com hat uns erkannt!")
+                        return
+                    
+                    # Try to find ANY hotel elements
+                    all_divs = self.driver.find_elements(By.TAG_NAME, "div")
+                    print(f"📊 Gefunden: {len(all_divs)} DIVs auf der Seite")
+                    
+                    # Filter DIVs that look like hotel cards
+                    for div in all_divs:
+                        try:
+                            text = div.text
+                            # Hotel cards usually have: name, price, rating
+                            if 'CHF' in text and len(text) > 50 and len(text) < 1000:
+                                hotels.append(div)
+                                if len(hotels) >= 20:
+                                    break
+                        except:
+                            continue
+                    
+                    if hotels:
+                        print(f"✓ Fallback: {len(hotels)} Hotel-ähnliche Elemente gefunden\n")
+                    
+                except Exception as e:
+                    print(f"❌ Fallback fehlgeschlagen: {e}")
             
             if not hotels:
                 print("⚠ Keine Hotels gefunden! Versuche alternative Suche...\n")
