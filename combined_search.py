@@ -20,8 +20,7 @@ class CombinedAccommodationSearch:
         self.all_results = {
             'airbnb': [],
             'booking': [],
-            'hotelscom': [],
-            'expedia': [],
+            'google_hotels': [],
         }
     
     def run(self):
@@ -31,8 +30,7 @@ class CombinedAccommodationSearch:
         print("Plattformen:")
         print("  1. 🏠 Airbnb")
         print("  2. 🏨 Booking.com")
-        print("  3. 🏨 Hotels.com")
-        print("  4. 🏨 Expedia")
+        print("  3. 🌐 Google Hotels (Alle Hotel-Plattformen!)")
         print("=" * 60)
         print()
         
@@ -62,31 +60,18 @@ class CombinedAccommodationSearch:
         except Exception as e:
             print(f"❌ Booking.com Fehler: {e}")
         
-        # 3. Hotels.com
+        # 3. Google Hotels (replaces Hotels.com + Expedia)
         print("\n" + "=" * 60)
-        print("3/4 🏨 HOTELS.COM")
+        print("3/3 🌐 GOOGLE HOTELS")
         print("=" * 60)
         try:
-            from hotelscom_searcher import HotelsComSearcher
-            hotelscom = HotelsComSearcher(self.config_path)
-            hotelscom.search()
-            self.all_results['hotelscom'] = hotelscom.results
-            print(f"✅ Hotels.com: {len(hotelscom.results)} Hotels")
+            from google_hotels_searcher import GoogleHotelsSearcher
+            google_hotels = GoogleHotelsSearcher(self.config_path)
+            google_hotels.search()
+            self.all_results['google_hotels'] = google_hotels.results
+            print(f"✅ Google Hotels: {len(google_hotels.results)} Hotels")
         except Exception as e:
-            print(f"❌ Hotels.com Fehler: {e}")
-        
-        # 4. Expedia
-        print("\n" + "=" * 60)
-        print("4/4 🏨 EXPEDIA")
-        print("=" * 60)
-        try:
-            from expedia_searcher import ExpediaSearcher
-            expedia = ExpediaSearcher(self.config_path)
-            expedia.search()
-            self.all_results['expedia'] = expedia.results
-            print(f"✅ Expedia: {len(expedia.results)} Hotels")
-        except Exception as e:
-            print(f"❌ Expedia Fehler: {e}")
+            print(f"❌ Google Hotels Fehler: {e}")
         
         # Generate comparison report
         self.generate_comparison_report()
@@ -136,10 +121,10 @@ class CombinedAccommodationSearch:
                 'max_guests': 'N/A',  # Booking doesn't have this
             })
         
-        # Hotels.com
-        for listing in self.all_results['hotelscom']:
+        # Google Hotels (replaces Hotels.com + Expedia)
+        for listing in self.all_results['google_hotels']:
             combined_data.append({
-                'platform': 'Hotels.com',
+                'platform': 'Google Hotels',
                 'name': listing.get('name', 'N/A'),
                 'location': listing.get('location', 'N/A'),
                 'price': listing.get('price_per_night', 0),
@@ -148,24 +133,7 @@ class CombinedAccommodationSearch:
                 'url': listing.get('url', ''),
                 'distance_km': listing.get('distance_km', 0),
                 'image_url': listing.get('image_url', ''),
-                'image_urls': listing.get('image_urls', []),  # ✅ FIX: Multi-images
-                'bedrooms': 'N/A',
-                'max_guests': 'N/A',
-            })
-        
-        # Expedia
-        for listing in self.all_results['expedia']:
-            combined_data.append({
-                'platform': 'Expedia',
-                'name': listing.get('name', 'N/A'),
-                'location': listing.get('location', 'N/A'),
-                'price': listing.get('price_per_night', 0),
-                'rating': listing.get('rating', 0),
-                'reviews': listing.get('num_reviews', 0),
-                'url': listing.get('url', ''),
-                'distance_km': listing.get('distance_km', 0),
-                'image_url': listing.get('image_url', ''),
-                'image_urls': listing.get('image_urls', []),  # ✅ FIX: Multi-images
+                'image_urls': listing.get('image_urls', []),
                 'bedrooms': 'N/A',
                 'max_guests': 'N/A',
             })

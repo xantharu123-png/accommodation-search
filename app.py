@@ -69,7 +69,7 @@ class SearchParams(BaseModel):
     min_reviews: int = 3
     search_radius_km: int = 5
     property_type: str = "any"  # any, entire_home, private_room, hotel_room
-    platforms: List[str] = ["airbnb", "booking", "hotelscom", "expedia"]
+    platforms: List[str] = ["airbnb", "booking", "google_hotels"]
     amenities: Optional[dict] = None  # Optional amenities filter
 
 
