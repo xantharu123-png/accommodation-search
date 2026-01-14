@@ -353,22 +353,93 @@ class BookingSearcher:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             
-            # Find property cards
-            property_selectors = [
+            
+            # Find property cards - ROBUST MULTI-STRATEGY
+            properties = []
+            
+            # Strategy 1: data-testid selectors
+            strategy1_selectors = [
                 "[data-testid='property-card']",
                 "[data-testid='property-card-container']",
                 "div[data-testid*='property']",
             ]
             
-            properties = []
-            for selector in property_selectors:
+            # Strategy 2: Class-based selectors
+            strategy2_selectors = [
+                "div[class*='property-card']",
+                "div[class*='sr_property_block']",
+                "div[class*='hotel-item']",
+                "div[class*='searchresult']",
+            ]
+            
+            # Strategy 3: Semantic structure
+            strategy3_selectors = [
+                "div[role='link']",
+                "article",
+                "div[data-component='property-card']",
+            ]
+            
+            print("🔍 Suche Unterkünfte mit mehreren Strategien...")
+            
+            # Try each strategy
+            all_strategies = [
+                ("Strategy 1 (data-testid)", strategy1_selectors),
+                ("Strategy 2 (classes)", strategy2_selectors),
+                ("Strategy 3 (semantic)", strategy3_selectors),
+            ]
+            
+            for strategy_name, selectors in all_strategies:
+                for selector in selectors:
+                    try:
+                        found = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                        if len(found) > 3:  # Need at least 4 properties
+                            properties = found
+                            print(f"✓ {len(properties)} Unterkünfte gefunden ({strategy_name}: {selector})\n")
+                            break
+                    except Exception as e:
+                        continue
+                
+                if properties:
+                    break
+            
+            # Fallback: Find divs with typical booking.com content
+            if not properties:
+                print("⚠ Standard-Selectors finden nichts! Versuche Fallback...")
                 try:
-                    properties = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if len(properties) > 5:
-                        print(f"✓ {len(properties)} Unterkünfte gefunden\n")
-                        break
-                except:
-                    continue
+                    # Save page source for debugging
+                    with open('/tmp/booking_debug.html', 'w', encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    print("📝 Debug HTML saved to /tmp/booking_debug.html")
+                    
+                    # Check if we're blocked
+                    page_source = self.driver.page_source
+                    if 'captcha' in page_source.lower() or 'blocked' in page_source.lower():
+                        print("🚫 BLOCKED! Booking.com hat uns erkannt!")
+                        return
+                    
+                    # Try to find ANY divs that look like property cards
+                    all_divs = self.driver.find_elements(By.TAG_NAME, "div")
+                    print(f"📊 Gefunden: {len(all_divs)} DIVs auf der Seite")
+                    
+                    # Filter for property-like divs (have price, name, rating)
+                    for div in all_divs:
+                        try:
+                            text = div.text
+                            # Property cards typically have: price (CHF), rating number, and reasonable length
+                            if ('CHF' in text or 'EUR' in text or '$' in text) and \
+                               len(text) > 100 and len(text) < 1500 and \
+                               any(char.isdigit() for char in text):
+                                properties.append(div)
+                                if len(properties) >= 20:
+                                    break
+                        except:
+                            continue
+                    
+                    if properties:
+                        print(f"✓ Fallback: {len(properties)} unterkunfts-ähnliche Elemente gefunden\n")
+                    
+                except Exception as e:
+                    print(f"❌ Fallback fehlgeschlagen: {e}")
             
             if not properties:
                 print("⚠ Keine Unterkünfte gefunden!")
