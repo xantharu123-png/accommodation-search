@@ -262,7 +262,229 @@
             <form id="searchForm">
                 <div class="form-group">
                     <label for="location">📍 Ort</label>
-                    <input type="text" id="location" name="location" placeholder="z.B. Leukerbad, Zermatt, Davos" required>
+                    <input type="text" id="location" name="location" list="cityList" placeholder="z.B. Paris, Bergün, Leukerbad" required autocomplete="off">
+                    <datalist id="cityList">
+                        <!-- Schweiz - Graubünden -->
+                        <option value="Arosa, Schweiz">Arosa, Graubünden 🎿</option>
+                        <option value="Davos, Schweiz">Davos, Graubünden 🎿</option>
+                        <option value="St. Moritz, Schweiz">St. Moritz, Graubünden 🎿</option>
+                        <option value="Flims, Schweiz">Flims, Graubünden 🎿</option>
+                        <option value="Laax, Schweiz">Laax, Graubünden 🎿</option>
+                        <option value="Lenzerheide, Schweiz">Lenzerheide, Graubünden 🎿</option>
+                        <option value="Klosters, Schweiz">Klosters, Graubünden 🎿</option>
+                        <option value="Pontresina, Schweiz">Pontresina, Graubünden 🏔️</option>
+                        <option value="Scuol, Schweiz">Scuol, Graubünden 🏔️</option>
+                        <option value="Bergün/Bravuogn, Schweiz">Bergün/Bravuogn, Graubünden 🚂</option>
+                        <option value="Chur, Schweiz">Chur, Graubünden 🏛️</option>
+                        <option value="Savognin, Schweiz">Savognin, Graubünden 🎿</option>
+                        <option value="Samnaun, Schweiz">Samnaun, Graubünden 🎿</option>
+                        
+                        <!-- Schweiz - Wallis -->
+                        <option value="Zermatt, Schweiz">Zermatt, Wallis 🏔️</option>
+                        <option value="Saas-Fee, Schweiz">Saas-Fee, Wallis 🎿</option>
+                        <option value="Verbier, Schweiz">Verbier, Wallis 🎿</option>
+                        <option value="Crans-Montana, Schweiz">Crans-Montana, Wallis 🎿</option>
+                        <option value="Leukerbad, Schweiz">Leukerbad, Wallis ♨️</option>
+                        <option value="Brig, Schweiz">Brig, Wallis 🏛️</option>
+                        <option value="Sion, Schweiz">Sion, Wallis 🏛️</option>
+                        <option value="Martigny, Schweiz">Martigny, Wallis 🏛️</option>
+                        <option value="Nendaz, Schweiz">Nendaz, Wallis 🎿</option>
+                        <option value="Riederalp, Schweiz">Riederalp, Wallis 🏔️</option>
+                        <option value="Bettmeralp, Schweiz">Bettmeralp, Wallis 🏔️</option>
+                        <option value="Bellwald, Schweiz">Bellwald, Wallis 🎿</option>
+                        <option value="Grächen, Schweiz">Grächen, Wallis 🎿</option>
+                        <option value="Saas-Grund, Schweiz">Saas-Grund, Wallis 🎿</option>
+                        
+                        <!-- Schweiz - Bern/Oberland -->
+                        <option value="Interlaken, Schweiz">Interlaken, Bern 🏔️</option>
+                        <option value="Grindelwald, Schweiz">Grindelwald, Bern 🏔️</option>
+                        <option value="Wengen, Schweiz">Wengen, Bern 🎿</option>
+                        <option value="Mürren, Schweiz">Mürren, Bern 🎿</option>
+                        <option value="Lauterbrunnen, Schweiz">Lauterbrunnen, Bern 🏔️</option>
+                        <option value="Adelboden, Schweiz">Adelboden, Bern 🎿</option>
+                        <option value="Gstaad, Schweiz">Gstaad, Bern 🎿</option>
+                        <option value="Kandersteg, Schweiz">Kandersteg, Bern 🏔️</option>
+                        <option value="Thun, Schweiz">Thun, Bern 🏰</option>
+                        <option value="Bern, Schweiz">Bern 🏛️</option>
+                        <option value="Brienz, Schweiz">Brienz, Bern 🚢</option>
+                        <option value="Meiringen, Schweiz">Meiringen, Bern 🏔️</option>
+                        
+                        <!-- Schweiz - Zentralschweiz -->
+                        <option value="Luzern, Schweiz">Luzern 🌉</option>
+                        <option value="Engelberg, Schweiz">Engelberg 🎿</option>
+                        <option value="Andermatt, Schweiz">Andermatt 🎿</option>
+                        <option value="Weggis, Schweiz">Weggis 🌊</option>
+                        <option value="Vitznau, Schweiz">Vitznau 🚂</option>
+                        <option value="Brunnen, Schweiz">Brunnen 🌊</option>
+                        <option value="Schwyz, Schweiz">Schwyz 🏛️</option>
+                        <option value="Zug, Schweiz">Zug 🏛️</option>
+                        
+                        <!-- Schweiz - Ostschweiz -->
+                        <option value="St. Gallen, Schweiz">St. Gallen 🏛️</option>
+                        <option value="Appenzell, Schweiz">Appenzell 🏔️</option>
+                        <option value="Flumserberg, Schweiz">Flumserberg 🎿</option>
+                        <option value="Bad Ragaz, Schweiz">Bad Ragaz ♨️</option>
+                        <option value="Heidiland, Schweiz">Heidiland 🏔️</option>
+                        
+                        <!-- Schweiz - Zürich Region -->
+                        <option value="Zürich, Schweiz">Zürich 🏙️</option>
+                        <option value="Winterthur, Schweiz">Winterthur 🏛️</option>
+                        
+                        <!-- Schweiz - Basel Region -->
+                        <option value="Basel, Schweiz">Basel 🏛️</option>
+                        
+                        <!-- Schweiz - Genfersee Region -->
+                        <option value="Genf, Schweiz">Genf 🌊</option>
+                        <option value="Lausanne, Schweiz">Lausanne 🌊</option>
+                        <option value="Montreux, Schweiz">Montreux 🎵</option>
+                        <option value="Vevey, Schweiz">Vevey 🌊</option>
+                        <option value="Nyon, Schweiz">Nyon 🌊</option>
+                        <option value="Leysin, Schweiz">Leysin 🎿</option>
+                        <option value="Villars, Schweiz">Villars 🎿</option>
+                        <option value="Les Diablerets, Schweiz">Les Diablerets 🎿</option>
+                        
+                        <!-- Schweiz - Tessin -->
+                        <option value="Lugano, Schweiz">Lugano 🌴</option>
+                        <option value="Locarno, Schweiz">Locarno 🌴</option>
+                        <option value="Ascona, Schweiz">Ascona 🌴</option>
+                        <option value="Bellinzona, Schweiz">Bellinzona 🏰</option>
+                        <option value="Mendrisio, Schweiz">Mendrisio 🌴</option>
+                        
+                        <!-- Frankreich - Städte -->
+                        <option value="Paris, Frankreich">Paris 🗼</option>
+                        <option value="Lyon, Frankreich">Lyon 🏛️</option>
+                        <option value="Marseille, Frankreich">Marseille 🌊</option>
+                        <option value="Nizza, Frankreich">Nizza 🌴</option>
+                        <option value="Bordeaux, Frankreich">Bordeaux 🍷</option>
+                        <option value="Toulouse, Frankreich">Toulouse ✈️</option>
+                        <option value="Straßburg, Frankreich">Straßburg 🏛️</option>
+                        <option value="Lille, Frankreich">Lille 🏛️</option>
+                        <option value="Cannes, Frankreich">Cannes 🎬</option>
+                        <option value="Monaco">Monaco 🏎️</option>
+                        <option value="Chamonix, Frankreich">Chamonix 🏔️</option>
+                        <option value="Annecy, Frankreich">Annecy 🌊</option>
+                        
+                        <!-- Deutschland - Top Städte -->
+                        <option value="Berlin, Deutschland">Berlin 🏛️</option>
+                        <option value="München, Deutschland">München 🍺</option>
+                        <option value="Hamburg, Deutschland">Hamburg ⚓</option>
+                        <option value="Frankfurt, Deutschland">Frankfurt 🏙️</option>
+                        <option value="Köln, Deutschland">Köln ⛪</option>
+                        <option value="Stuttgart, Deutschland">Stuttgart 🚗</option>
+                        <option value="Düsseldorf, Deutschland">Düsseldorf 🏙️</option>
+                        <option value="Dortmund, Deutschland">Dortmund ⚽</option>
+                        <option value="Dresden, Deutschland">Dresden 🏛️</option>
+                        <option value="Leipzig, Deutschland">Leipzig 🎵</option>
+                        <option value="Garmisch-Partenkirchen, Deutschland">Garmisch-Partenkirchen 🎿</option>
+                        <option value="Konstanz, Deutschland">Konstanz 🌊</option>
+                        <option value="Freiburg, Deutschland">Freiburg 🏔️</option>
+                        
+                        <!-- Österreich - Ski & Städte -->
+                        <option value="Wien, Österreich">Wien 🎻</option>
+                        <option value="Salzburg, Österreich">Salzburg 🎵</option>
+                        <option value="Innsbruck, Österreich">Innsbruck 🎿</option>
+                        <option value="Kitzbühel, Österreich">Kitzbühel 🎿</option>
+                        <option value="St. Anton, Österreich">St. Anton 🎿</option>
+                        <option value="Ischgl, Österreich">Ischgl 🎿</option>
+                        <option value="Sölden, Österreich">Sölden 🎿</option>
+                        <option value="Zell am See, Österreich">Zell am See 🎿</option>
+                        <option value="Saalbach, Österreich">Saalbach 🎿</option>
+                        <option value="Hallstatt, Österreich">Hallstatt 🏔️</option>
+                        
+                        <!-- Italien - Top Städte & Ski -->
+                        <option value="Rom, Italien">Rom 🏛️</option>
+                        <option value="Mailand, Italien">Mailand 👗</option>
+                        <option value="Venedig, Italien">Venedig 🚣</option>
+                        <option value="Florenz, Italien">Florenz 🎨</option>
+                        <option value="Neapel, Italien">Neapel 🍕</option>
+                        <option value="Turin, Italien">Turin 🏛️</option>
+                        <option value="Verona, Italien">Verona 💕</option>
+                        <option value="Bologna, Italien">Bologna 🍝</option>
+                        <option value="Cortina d'Ampezzo, Italien">Cortina d'Ampezzo 🎿</option>
+                        <option value="Livigno, Italien">Livigno 🎿</option>
+                        <option value="Como, Italien">Como 🌊</option>
+                        <option value="Gardasee, Italien">Gardasee 🌊</option>
+                        
+                        <!-- Spanien -->
+                        <option value="Barcelona, Spanien">Barcelona ⚽</option>
+                        <option value="Madrid, Spanien">Madrid 🏛️</option>
+                        <option value="Sevilla, Spanien">Sevilla 💃</option>
+                        <option value="Valencia, Spanien">Valencia 🥘</option>
+                        <option value="Mallorca, Spanien">Mallorca 🏖️</option>
+                        <option value="Ibiza, Spanien">Ibiza 🎉</option>
+                        <option value="Marbella, Spanien">Marbella ⛱️</option>
+                        <option value="Granada, Spanien">Granada 🏰</option>
+                        
+                        <!-- UK & Irland -->
+                        <option value="London, UK">London 🏰</option>
+                        <option value="Edinburgh, UK">Edinburgh 🏴󠁧󠁢󠁳󠁣󠁴󠁿</option>
+                        <option value="Manchester, UK">Manchester ⚽</option>
+                        <option value="Liverpool, UK">Liverpool 🎵</option>
+                        <option value="Dublin, Irland">Dublin 🍀</option>
+                        
+                        <!-- Niederlande & Belgien -->
+                        <option value="Amsterdam, Niederlande">Amsterdam 🚲</option>
+                        <option value="Rotterdam, Niederlande">Rotterdam 🏙️</option>
+                        <option value="Den Haag, Niederlande">Den Haag 🏛️</option>
+                        <option value="Brüssel, Belgien">Brüssel 🍫</option>
+                        <option value="Brügge, Belgien">Brügge 🏰</option>
+                        
+                        <!-- Osteuropa -->
+                        <option value="Prag, Tschechien">Prag 🏰</option>
+                        <option value="Budapest, Ungarn">Budapest ♨️</option>
+                        <option value="Krakau, Polen">Krakau 🏛️</option>
+                        <option value="Warschau, Polen">Warschau 🏙️</option>
+                        
+                        <!-- Skandinavien -->
+                        <option value="Kopenhagen, Dänemark">Kopenhagen 🚲</option>
+                        <option value="Stockholm, Schweden">Stockholm 🏰</option>
+                        <option value="Oslo, Norwegen">Oslo 🏔️</option>
+                        <option value="Helsinki, Finnland">Helsinki 🏛️</option>
+                        <option value="Reykjavik, Island">Reykjavik 🌋</option>
+                        
+                        <!-- Griechenland -->
+                        <option value="Athen, Griechenland">Athen 🏛️</option>
+                        <option value="Santorini, Griechenland">Santorini 🌅</option>
+                        <option value="Mykonos, Griechenland">Mykonos 🏖️</option>
+                        <option value="Kreta, Griechenland">Kreta 🏖️</option>
+                        <option value="Rhodos, Griechenland">Rhodos 🏰</option>
+                        <option value="Korfu, Griechenland">Korfu 🌴</option>
+                        
+                        <!-- Portugal -->
+                        <option value="Lissabon, Portugal">Lissabon 🌉</option>
+                        <option value="Porto, Portugal">Porto 🍷</option>
+                        <option value="Algarve, Portugal">Algarve 🏖️</option>
+                        <option value="Madeira, Portugal">Madeira 🌺</option>
+                        
+                        <!-- USA -->
+                        <option value="New York, USA">New York 🗽</option>
+                        <option value="Los Angeles, USA">Los Angeles 🎬</option>
+                        <option value="Miami, USA">Miami 🏖️</option>
+                        <option value="Las Vegas, USA">Las Vegas 🎰</option>
+                        <option value="San Francisco, USA">San Francisco 🌉</option>
+                        <option value="Chicago, USA">Chicago 🏙️</option>
+                        <option value="Boston, USA">Boston 🏛️</option>
+                        <option value="Orlando, USA">Orlando 🎢</option>
+                        <option value="Aspen, USA">Aspen 🎿</option>
+                        <option value="Vail, USA">Vail 🎿</option>
+                        
+                        <!-- Asien -->
+                        <option value="Dubai, UAE">Dubai 🏙️</option>
+                        <option value="Tokyo, Japan">Tokyo 🗼</option>
+                        <option value="Singapur">Singapur 🏙️</option>
+                        <option value="Bangkok, Thailand">Bangkok 🛕</option>
+                        <option value="Bali, Indonesien">Bali 🏝️</option>
+                        <option value="Phuket, Thailand">Phuket 🏖️</option>
+                        <option value="Hong Kong">Hong Kong 🏙️</option>
+                        <option value="Seoul, Südkorea">Seoul 🏙️</option>
+                        
+                        <!-- Exotic -->
+                        <option value="Malediven">Malediven 🏝️</option>
+                        <option value="Mauritius">Mauritius 🏝️</option>
+                        <option value="Seychellen">Seychellen 🏝️</option>
+                        <option value="Bora Bora, Französisch-Polynesien">Bora Bora 🏝️</option>
+                        <option value="Maui, Hawaii">Maui 🌺</option>
+                    </datalist>
                 </div>
                 
                 <div class="form-row">
