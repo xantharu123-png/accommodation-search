@@ -30,36 +30,71 @@ class GoogleHotelsSearcher:
         self.results = []
         
     def setup_driver(self):
-        """Setup Chrome driver with anti-detection"""
+        """Setup Chrome driver with AGGRESSIVE Railway optimization"""
         chrome_options = Options()
         
         if self.config.get('scraping_settings', {}).get('headless', True):
             chrome_options.add_argument('--headless=new')
         
-        # Essential args for Docker/Railway
+        # CRITICAL: Railway/Docker stability options
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--disable-software-rasterizer')
         chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--disable-setuid-sandbox')
+        chrome_options.add_argument('--single-process')  # Single process for Railway
+        chrome_options.add_argument('--no-zygote')  # No zygote for Railway
+        chrome_options.add_argument('--disable-dev-tools')  # Disable DevTools
         
-        # Anti-detection
+        # AGGRESSIVE memory limits
+        chrome_options.add_argument('--js-flags=--max-old-space-size=256')  # Limit JS heap
+        chrome_options.add_argument('--max_old_space_size=256')  # Limit V8 heap
+        chrome_options.add_argument('--memory-pressure-off')  # Disable memory pressure
+        chrome_options.add_argument('--disable-features=IsolateOrigins,site-per-process')  # Less memory
+        
+        # Memory optimization
+        chrome_options.add_argument('--disable-background-networking')
+        chrome_options.add_argument('--disable-default-apps')
+        chrome_options.add_argument('--disable-sync')
+        chrome_options.add_argument('--disable-translate')
+        chrome_options.add_argument('--hide-scrollbars')
+        chrome_options.add_argument('--metrics-recording-only')
+        chrome_options.add_argument('--mute-audio')
+        chrome_options.add_argument('--no-first-run')
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-hang-monitor')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--disable-prompt-on-repost')
+        chrome_options.add_argument('--disable-client-side-phishing-detection')
+        chrome_options.add_argument('--disable-component-extensions-with-background-pages')
+        
+        # Disable images and CSS for less memory (AGGRESSIVE!)
+        prefs = {
+            "profile.managed_default_content_settings.images": 2,  # Block images
+            "profile.managed_default_content_settings.stylesheets": 2,  # Block CSS
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+        
+        # Anti-detection (keep minimal)
         chrome_options.add_argument(f"user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
+        print("🚀 Starting Chrome with AGGRESSIVE memory limits for Railway...")
         self.driver = webdriver.Chrome(options=chrome_options)
         
         # Remove webdriver flag
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
-        # Set window size
-        self.driver.set_window_size(1920, 1080)
+        # Smaller window = less memory
+        self.driver.set_window_size(1024, 768)
         
     def build_search_url(self) -> str:
-        """Build Google Hotels search URL"""
+        """Build SIMPLE Google Hotels search URL"""
         params = self.config['search_parameters']
         
         location = params['location']
@@ -67,20 +102,18 @@ class GoogleHotelsSearcher:
         check_out = params['check_out']
         guests = params['guests']
         
-        # Google Hotels URL format
-        base_url = "https://www.google.com/travel/hotels"
+        # SIMPLE Google search for hotels
+        query = f"hotels in {location}"
+        base_url = "https://www.google.com/search"
         
-        # Build query
-        url = f"{base_url}/{quote(location)}"
-        url += f"?q=hotels%20in%20{quote(location)}"
-        url += f"&g2lb=2502548%2C2503771%2C2503781%2C4258168%2C4270442%2C4284970%2C4291517%2C4306835%2C4597339%2C4757164%2C4814050%2C4874190%2C4893075%2C4924070%2C4965990%2C4990494%2C72302247%2C72317059%2C72406588%2C72414906%2C72421566%2C72462234%2C72470440%2C72470899%2C72471280%2C72472051%2C72473841%2C72481459%2C72485658%2C72494250%2C72513513%2C72536387%2C72538597%2C72549171%2C72570850%2C72586335%2C72597757%2C72602734%2C72616120%2C72619927%2C72628719%2C72647020"
-        url += f"&hl=de&gl=ch"
-        url += f"&cs=1"
-        url += f"&ssta=1"
-        url += f"&ts=CAESCgoCCAMKAggDEAAaLAoSCQC8TtcRRCpAEZyqjzpUIkZAEhIJi_rYYhxEKkARf9Y7N-kiRkAYATICEAAqCwoHKAE6A0NIRhAA"
-        url += f"&rp=ogHEBUxldWtlcmJhZA"
-        url += f"&ap=MABoAQ"
-        url += f"&ictx=111"
+        # Simple parameters
+        url = f"{base_url}?q={quote(query)}"
+        url += f"&ibp=htl;dates={check_in.replace('-', '')},{check_out.replace('-', '')}"
+        url += f";guests={guests}"
+        url += "&hl=de"
+        url += "&gl=ch"
+        
+        return url
         
         # Add dates
         url += f"&sa=X"
