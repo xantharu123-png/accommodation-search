@@ -261,9 +261,118 @@
         <div class="card">
             <form id="searchForm">
                 <div class="form-group">
-                    <label for="location">📍 Ort</label>
-                    <input type="text" id="location" name="location" list="cityList" placeholder="z.B. Paris, Bergün, Leukerbad" required autocomplete="off">
+                    <label for="location">📍 Ort oder Region</label>
+                    <input type="text" id="location" name="location" list="cityList" placeholder="z.B. Mallorca, Berner Oberland, Gran Canaria" required autocomplete="off">
                     <datalist id="cityList">
+                        <!-- 🗺️ REGIONEN - SCHWEIZ -->
+                        <option value="Berner Oberland, Schweiz">🗺️ Berner Oberland (Region)</option>
+                        <option value="Jungfrau Region, Schweiz">🗺️ Jungfrau Region (Region)</option>
+                        <option value="Matterhorn Region, Schweiz">🗺️ Matterhorn Region (Region)</option>
+                        <option value="Graubünden, Schweiz">🗺️ Graubünden (Region)</option>
+                        <option value="Wallis, Schweiz">🗺️ Wallis (Region)</option>
+                        <option value="Tessin, Schweiz">🗺️ Tessin (Region)</option>
+                        <option value="Zentralschweiz">🗺️ Zentralschweiz (Region)</option>
+                        <option value="Genferseeregion, Schweiz">🗺️ Genferseeregion (Region)</option>
+                        <option value="Ostschweiz">🗺️ Ostschweiz (Region)</option>
+                        <option value="Engadin, Schweiz">🗺️ Engadin (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - SPANIEN INSELN -->
+                        <option value="Gran Canaria, Spanien">🗺️ Gran Canaria 🏝️ (Region)</option>
+                        <option value="Teneriffa, Spanien">🗺️ Teneriffa 🏝️ (Region)</option>
+                        <option value="Fuerteventura, Spanien">🗺️ Fuerteventura 🏝️ (Region)</option>
+                        <option value="Lanzarote, Spanien">🗺️ Lanzarote 🏝️ (Region)</option>
+                        <option value="La Palma, Spanien">🗺️ La Palma 🏝️ (Region)</option>
+                        <option value="Mallorca, Spanien">🗺️ Mallorca 🏖️ (Region)</option>
+                        <option value="Ibiza, Spanien">🗺️ Ibiza 🎉 (Region)</option>
+                        <option value="Menorca, Spanien">🗺️ Menorca 🏖️ (Region)</option>
+                        <option value="Formentera, Spanien">🗺️ Formentera 🏖️ (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - SPANIEN KÜSTEN -->
+                        <option value="Costa del Sol, Spanien">🗺️ Costa del Sol 🌊 (Region)</option>
+                        <option value="Costa Brava, Spanien">🗺️ Costa Brava 🌊 (Region)</option>
+                        <option value="Costa Blanca, Spanien">🗺️ Costa Blanca 🌊 (Region)</option>
+                        <option value="Costa Dorada, Spanien">🗺️ Costa Dorada 🌊 (Region)</option>
+                        <option value="Andalusien, Spanien">🗺️ Andalusien (Region)</option>
+                        <option value="Katalonien, Spanien">🗺️ Katalonien (Region)</option>
+                        <option value="Baskenland, Spanien">🗺️ Baskenland (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - ITALIEN -->
+                        <option value="Lago Maggiore, Italien">🗺️ Lago Maggiore 🌊 (Region)</option>
+                        <option value="Comer See, Italien">🗺️ Comer See 🌊 (Region)</option>
+                        <option value="Gardasee, Italien">🗺️ Gardasee 🌊 (Region)</option>
+                        <option value="Toskana, Italien">🗺️ Toskana 🍷 (Region)</option>
+                        <option value="Südtirol, Italien">🗺️ Südtirol 🏔️ (Region)</option>
+                        <option value="Amalfiküste, Italien">🗺️ Amalfiküste 🌊 (Region)</option>
+                        <option value="Cinque Terre, Italien">🗺️ Cinque Terre 🌊 (Region)</option>
+                        <option value="Ligurien, Italien">🗺️ Ligurien (Region)</option>
+                        <option value="Sardinien, Italien">🗺️ Sardinien 🏝️ (Region)</option>
+                        <option value="Sizilien, Italien">🗺️ Sizilien 🏝️ (Region)</option>
+                        <option value="Dolomiten, Italien">🗺️ Dolomiten 🏔️ (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - GRIECHENLAND -->
+                        <option value="Kreta, Griechenland">🗺️ Kreta 🏝️ (Region)</option>
+                        <option value="Rhodos, Griechenland">🗺️ Rhodos 🏝️ (Region)</option>
+                        <option value="Kos, Griechenland">🗺️ Kos 🏝️ (Region)</option>
+                        <option value="Korfu, Griechenland">🗺️ Korfu 🏝️ (Region)</option>
+                        <option value="Zakynthos, Griechenland">🗺️ Zakynthos 🏝️ (Region)</option>
+                        <option value="Kykladen, Griechenland">🗺️ Kykladen 🏝️ (Region)</option>
+                        <option value="Peloponnes, Griechenland">🗺️ Peloponnes (Region)</option>
+                        <option value="Chalkidiki, Griechenland">🗺️ Chalkidiki 🏖️ (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - FRANKREICH -->
+                        <option value="Côte d'Azur, Frankreich">🗺️ Côte d'Azur 🌊 (Region)</option>
+                        <option value="Provence, Frankreich">🗺️ Provence 🌻 (Region)</option>
+                        <option value="Bretagne, Frankreich">🗺️ Bretagne 🌊 (Region)</option>
+                        <option value="Französische Alpen, Frankreich">🗺️ Französische Alpen 🏔️ (Region)</option>
+                        <option value="Loire-Tal, Frankreich">🗺️ Loire-Tal 🏰 (Region)</option>
+                        <option value="Normandie, Frankreich">🗺️ Normandie 🌊 (Region)</option>
+                        <option value="Korsika, Frankreich">🗺️ Korsika 🏝️ (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - ÖSTERREICH -->
+                        <option value="Tirol, Österreich">🗺️ Tirol 🏔️ (Region)</option>
+                        <option value="Salzburger Land, Österreich">🗺️ Salzburger Land 🏔️ (Region)</option>
+                        <option value="Kärnten, Österreich">🗺️ Kärnten 🌊 (Region)</option>
+                        <option value="Vorarlberg, Österreich">🗺️ Vorarlberg 🏔️ (Region)</option>
+                        <option value="Salzkammergut, Österreich">🗺️ Salzkammergut 🌊 (Region)</option>
+                        <option value="Zillertal, Österreich">🗺️ Zillertal 🎿 (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - DEUTSCHLAND -->
+                        <option value="Schwarzwald, Deutschland">🗺️ Schwarzwald 🌲 (Region)</option>
+                        <option value="Bayerische Alpen, Deutschland">🗺️ Bayerische Alpen 🏔️ (Region)</option>
+                        <option value="Bodensee">🗺️ Bodensee 🌊 (Region)</option>
+                        <option value="Nordsee, Deutschland">🗺️ Nordsee 🌊 (Region)</option>
+                        <option value="Ostsee, Deutschland">🗺️ Ostsee 🌊 (Region)</option>
+                        <option value="Harz, Deutschland">🗺️ Harz 🏔️ (Region)</option>
+                        <option value="Allgäu, Deutschland">🗺️ Allgäu 🏔️ (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - PORTUGAL -->
+                        <option value="Algarve, Portugal">🗺️ Algarve 🏖️ (Region)</option>
+                        <option value="Madeira, Portugal">🗺️ Madeira 🌺 (Region)</option>
+                        <option value="Azoren, Portugal">🗺️ Azoren 🏝️ (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - KROATIEN -->
+                        <option value="Istrien, Kroatien">🗺️ Istrien 🌊 (Region)</option>
+                        <option value="Dalmatien, Kroatien">🗺️ Dalmatien 🌊 (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - TÜRKEI -->
+                        <option value="Türkische Riviera, Türkei">🗺️ Türkische Riviera 🏖️ (Region)</option>
+                        <option value="Türkische Ägäis, Türkei">🗺️ Türkische Ägäis 🌊 (Region)</option>
+                        <option value="Kappadokien, Türkei">🗺️ Kappadokien 🎈 (Region)</option>
+                        
+                        <!-- 🗺️ REGIONEN - WELTWEIT -->
+                        <option value="Malediven">🗺️ Malediven 🏝️ (Region)</option>
+                        <option value="Seychellen">🗺️ Seychellen 🏝️ (Region)</option>
+                        <option value="Mauritius">🗺️ Mauritius 🏝️ (Region)</option>
+                        <option value="Bali, Indonesien">🗺️ Bali 🏝️ (Region)</option>
+                        <option value="Phuket, Thailand">🗺️ Phuket 🏖️ (Region)</option>
+                        <option value="Koh Samui, Thailand">🗺️ Koh Samui 🏝️ (Region)</option>
+                        <option value="Hawaii, USA">🗺️ Hawaii 🌺 (Region)</option>
+                        <option value="Karibik">🗺️ Karibik 🏝️ (Region)</option>
+                        <option value="Dubai & UAE">🗺️ Dubai & UAE 🏙️ (Region)</option>
+                        <option value="Französisch-Polynesien">🗺️ Französisch-Polynesien 🏝️ (Region)</option>
+                        
+                        <!-- ======= STÄDTE BEGINNEN HIER ======= -->
+                        
                         <!-- Schweiz - Graubünden -->
                         <option value="Arosa, Schweiz">Arosa, Graubünden 🎿</option>
                         <option value="Davos, Schweiz">Davos, Graubünden 🎿</option>
