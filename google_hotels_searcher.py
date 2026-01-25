@@ -113,6 +113,21 @@ class GoogleHotelsSearcher:
         url += "&hl=de"
         url += "&gl=ch"
         
+        
+        # 🍳 Meal Plan Filters for Google Hotels
+        meal_plan = params.get('meal_plan', [])
+        if meal_plan:
+            meal_params = []
+            if 'breakfast' in meal_plan:
+                meal_params.append('free_breakfast=true')
+            if 'half_board' in meal_plan or 'full_board' in meal_plan:
+                # Google Hotels doesn't have half/full board as separate filters
+                # Use amenities filter for meals
+                meal_params.append('meals=true')
+            
+            if meal_params:
+                url += '&' + '&'.join(meal_params)
+
         return url
         
         # Add dates

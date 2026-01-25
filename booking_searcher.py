@@ -110,6 +110,21 @@ class BookingSearcher:
             booking_min_rating = int(min_rating * 2 * 10)  # 4.6 * 2 * 10 = 92
             url += f"&review_score={booking_min_rating}"
         
+        
+        # 🍳 Meal Plan Filters
+        meal_plan = params.get('meal_plan', [])
+        if meal_plan:
+            meal_filters = []
+            if 'breakfast' in meal_plan:
+                meal_filters.append('mealplan=999')  # Breakfast included
+            if 'half_board' in meal_plan:
+                meal_filters.append('mealplan=2')   # Half board
+            if 'full_board' in meal_plan:
+                meal_filters.append('mealplan=3')   # Full board
+            
+            if meal_filters:
+                url += '&' + '&'.join(meal_filters)
+
         return url
     
     def handle_popups(self):
