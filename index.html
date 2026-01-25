@@ -598,6 +598,25 @@
                 </div>
                 
                 <div class="form-group">
+                    <label>🍳 Verpflegung (nur Booking.com & Google Hotels)</label>
+                    <div class="platform-checkboxes">
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="meal_plan" value="breakfast">
+                            <span>🍳 Frühstück inklusive</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="meal_plan" value="half_board">
+                            <span>🍽️ Halbpension</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="meal_plan" value="full_board">
+                            <span>🍴 Vollpension</span>
+                        </label>
+                    </div>
+                    <p style="font-size: 12px; color: #666; margin-top: 8px;">💡 Verpflegungsoptionen funktionieren nur bei Booking.com und Google Hotels</p>
+                </div>
+                
+                <div class="form-group">
                     <label>🔍 Plattformen</label>
                     <div class="platform-checkboxes">
                         <label class="checkbox-item">
@@ -722,7 +741,8 @@
                 search_radius_km: parseInt(formData.get('search_radius_km')),
                 property_type: formData.get('property_type') || 'any',
                 platforms: platforms,
-                amenities: amenitiesConfig
+                amenities: amenitiesConfig,
+                meal_plan: formData.getAll('meal_plan')  // Add meal plan
             };
             
             // Disable form
