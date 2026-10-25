@@ -792,8 +792,10 @@
         document.getElementById('check_in').value = tomorrow.toISOString().split('T')[0];
         document.getElementById('check_out').value = dayAfter.toISOString().split('T')[0];
         
-        // API base URL - Railway Production
-        const API_BASE_URL = 'https://accommodation-search.onrender.com';
+        // API base URL - Render Production (served locally by the backend → same origin)
+        const API_BASE_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+            ? ''
+            : 'https://accommodation-search.onrender.com';
         
         let currentSearchId = null;
         let statusCheckInterval = null;
@@ -889,6 +891,15 @@
         async function checkSearchStatus() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/search/${currentSearchId}`);
+
+                // 404: server restarted (e.g. out of memory) and lost the search → stop polling
+                if (response.status === 404) {
+                    clearInterval(statusCheckInterval);
+                    showError('Suche abgebrochen: Der Server wurde neu gestartet (vermutlich Speicherlimit). Bitte erneut versuchen.');
+                    resetForm();
+                    return;
+                }
+
                 const status = await response.json();
                 
                 // Update UI

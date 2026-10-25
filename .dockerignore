@@ -1,0 +1,8 @@
+.git
+.netlify
+__pycache__
+*.pyc
+results
+favorites.db
+*.bat
+PROJECT_SUMMARY.md

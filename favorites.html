@@ -282,7 +282,8 @@
     </div>
     
     <script>
-        const API_BASE_URL = 'https://accommodation-search-production.up.railway.app';
+        // Served by the backend → same origin; opened as a local file → local server
+        const API_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : '';
         let currentList = null;
         let allLists = [];
         let selectedFavorites = new Set();

@@ -11,6 +11,9 @@ from pydantic import BaseModel
 from typing import Optional, List
 import json
 import os
+import shutil
+import subprocess
+import traceback
 from datetime import datetime
 from pathlib import Path
 import uuid
@@ -47,6 +50,21 @@ async def startup_cleanup():
         print("✅ Startup cleanup complete!")
     except Exception as e:
         print(f"⚠️ Cleanup error: {e}")
+
+    # Log Chrome availability so a missing browser shows up in the deploy logs
+    chrome_bin = os.environ.get('CHROME_BIN') or shutil.which('chromium') or shutil.which('google-chrome')
+    if chrome_bin:
+        try:
+            version = subprocess.run([chrome_bin, '--version'], capture_output=True, text=True, timeout=20).stdout.strip()
+            print(f"✅ Chrome gefunden: {version} ({chrome_bin})")
+        except Exception as e:
+            print(f"⚠️ Chrome gefunden, aber nicht startbar: {chrome_bin} ({e})")
+    else:
+        print("⚠️ Kein Chrome im PATH - lokal sucht Selenium selbst, auf Render muss der Docker-Build verwendet werden")
+
+# Limits per platform (Render Free has only 0.1 CPU - see render.yaml)
+MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '50'))
+MAX_PAGES = int(os.environ.get('MAX_PAGES', '3'))
 
 # In-memory storage for search status (use Redis in production)
 search_status = {}
@@ -170,8 +188,8 @@ def run_search(search_id: str, params: SearchParams):
                 "use_exact_location": False
             },
             "output": {
-                "max_results": 50,
-                "max_pages": 3,  # Reduced for Railway memory limits
+                "max_results": MAX_RESULTS,
+                "max_pages": MAX_PAGES,
                 "save_to_csv": True,
                 "save_to_html": True
             },
@@ -216,19 +234,21 @@ def run_search(search_id: str, params: SearchParams):
                 booking.search()
                 all_results.extend(booking.results)
             
+            if "google_hotels" in params.platforms:
+                search_status[search_id]["progress"] = "Suche auf Google Hotels..."
+                from google_hotels_searcher import GoogleHotelsSearcher
+                google_hotels = GoogleHotelsSearcher(str(config_path))
+                google_hotels.search()
+                all_results.extend(google_hotels.results)
+            
+            # Legacy platform support (in case old bookmarks exist)
             if "hotelscom" in params.platforms:
-                search_status[search_id]["progress"] = "Suche auf Hotels.com..."
-                from hotelscom_searcher import HotelsComSearcher
-                hotelscom = HotelsComSearcher(str(config_path))
-                hotelscom.search()
-                all_results.extend(hotelscom.results)
+                search_status[search_id]["progress"] = "Hotels.com nicht mehr unterstützt, verwende Google Hotels..."
+                print("⚠️ Hotels.com deprecated - use Google Hotels instead")
             
             if "expedia" in params.platforms:
-                search_status[search_id]["progress"] = "Suche auf Expedia..."
-                from expedia_searcher import ExpediaSearcher
-                expedia = ExpediaSearcher(str(config_path))
-                expedia.search()
-                all_results.extend(expedia.results)
+                search_status[search_id]["progress"] = "Expedia nicht mehr unterstützt, verwende Google Hotels..."
+                print("⚠️ Expedia deprecated - use Google Hotels instead")
         
         # Find generated HTML report (any platform)
         html_files = list(RESULTS_DIR.glob("*results*.html"))
@@ -295,7 +315,7 @@ def run_search(search_id: str, params: SearchParams):
 </head>
 <body>
     <div class="top-nav">
-        <a href="https://preeminent-bublanina-07acfe.netlify.app/favorites.html" target="_blank">⭐ Meine Favoriten ansehen</a>
+        <a href="/favorites.html" target="_blank">⭐ Meine Favoriten ansehen</a>
     </div>
     <h1>🏠 {len(all_results)} Unterkünfte gefunden</h1>
     <p>Suche für: {params.location} | {params.check_in} - {params.check_out}</p>
@@ -351,7 +371,8 @@ def run_search(search_id: str, params: SearchParams):
             html_content += """
 </body>
 <script>
-const API_BASE_URL = 'https://accommodation-search-production.up.railway.app';
+// Report is served by the backend itself → same origin works locally and on Render
+const API_BASE_URL = '';
 const SEARCH_LOCATION = '""" + params.location + """';
 
 // Store all listings data
@@ -427,6 +448,8 @@ async function addToFavorites(index) {
         }
         
     except Exception as e:
+        print(f"❌ Suche {search_id} fehlgeschlagen: {e}")
+        traceback.print_exc()
         search_status[search_id] = {
             "status": "failed",
             "progress": "Fehler",
@@ -437,16 +460,20 @@ async function addToFavorites(index) {
 
 @app.get("/")
 async def root():
-    """API info"""
-    return {
-        "name": "Accommodation Search API",
-        "version": "1.0.0",
-        "endpoints": {
-            "search": "POST /api/search",
-            "status": "GET /api/search/{search_id}",
-            "results": "GET /results/{filename}"
-        }
-    }
+    """Serve the main search page"""
+    index_path = Path(__file__).parent / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html")
+    return {"name": "Accommodation Search API", "version": "1.0.0"}
+
+
+@app.get("/favorites.html")
+async def favorites_page():
+    """Serve the favorites page"""
+    fav_path = Path(__file__).parent / "favorites.html"
+    if fav_path.exists():
+        return FileResponse(fav_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="Favorites page not found")
 
 
 @app.post("/api/search", response_model=SearchResponse)

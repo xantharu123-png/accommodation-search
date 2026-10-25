@@ -1,40 +1,24 @@
-# Use Python base image
-FROM python:3.12-slim
+# Use Python base image (Debian 12 "bookworm")
+FROM python:3.12-slim-bookworm
 
-# Install Chrome dependencies
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    unzip \
-    curl \
-    ca-certificates \
+# Install Chromium + matching Chromedriver from Debian packages.
+# Both come from the same package source, so their versions always match and
+# Selenium does not have to download a driver at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-driver \
     fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libwayland-client0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xdg-utils \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome (modern method)
-RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get update \
-    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
-    && rm google-chrome-stable_current_amd64.deb \
-    && rm -rf /var/lib/apt/lists/*
+# PYTHONUNBUFFERED: print() output shows up immediately in the Render/Railway logs
+# CHROME_BIN / CHROMEDRIVER_PATH: used by chrome_driver.py
+# LOW_MEMORY: enables the memory-saving Chrome flags (Render Free = 512 MB RAM)
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CHROME_BIN=/usr/bin/chromium \
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    LOW_MEMORY=1
 
 # Set working directory
 WORKDIR /app
@@ -48,8 +32,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port (Railway sets $PORT dynamically)
-EXPOSE 8080
+# Render sets $PORT (default 10000), Railway sets it dynamically
+EXPOSE 10000
 
-# Start command - use Python to handle PORT
-CMD ["python", "-c", "import os; import uvicorn; uvicorn.run('app:app', host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))"]
+# Single worker: search status is kept in memory
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]

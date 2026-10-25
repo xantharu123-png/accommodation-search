@@ -195,8 +195,11 @@ class GoogleMapsDistance:
             full_origin = f"{origin}, Switzerland"
         else:
             full_origin = origin
-        
-        origin_city = origin.split(',')[0].strip().lower()
+
+        # Extract country from origin for address building (e.g. "Lanzarote, Spanien" → "Spanien")
+        origin_parts = origin.split(',')
+        origin_country = origin_parts[-1].strip() if len(origin_parts) > 1 else "Switzerland"
+        origin_city = origin_parts[0].strip().lower()
         
         print(f"🗺️ Berechne echte Distanzen mit Google Maps...")
         print(f"   Von: {full_origin}")
@@ -231,8 +234,8 @@ class GoogleMapsDistance:
                         break
             
             if city:
-                # Use ONLY city name + country
-                address = f"{city}, Switzerland"
+                # Use city name + country from origin (not hardcoded Switzerland)
+                address = f"{city}, {origin_country}"
             else:
                 # Fallback: For listings in the origin city, use full origin
                 address = full_origin

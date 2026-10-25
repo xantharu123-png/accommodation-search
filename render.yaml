@@ -1,0 +1,21 @@
+# Render Blueprint: backend as a Docker service (Chromium is installed via the Dockerfile).
+# The native Python runtime has no Chrome - that is why searches hung there.
+services:
+  - type: web
+    name: accommodation-search
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Fewer detail pages per platform - Render Free only has 0.1 CPU
+      - key: MAX_RESULTS
+        value: "15"
+      - key: MAX_PAGES
+        value: "2"
+      # Optional, set in the dashboard (not stored in git)
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

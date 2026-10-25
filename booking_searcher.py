@@ -18,6 +18,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import pandas as pd
 
+from chrome_driver import create_driver
+
 
 class BookingSearcher:
     def __init__(self, config_path: str = None):
@@ -50,9 +52,9 @@ class BookingSearcher:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver = create_driver(chrome_options)
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
+
     def build_search_url(self) -> str:
         """Build Booking.com search URL"""
         params = self.config['search_parameters']
@@ -153,7 +155,7 @@ class BookingSearcher:
             pass
     
     def extract_property_data(self, property_card) -> Optional[Dict]:
-        """Extract data from a single property card"""
+        """Extract data from a single property card - robust with text fallback"""
         try:
             data = {
                 'name': 'N/A',
@@ -163,82 +165,183 @@ class BookingSearcher:
                 'num_reviews': 0,
                 'url': 'N/A',
                 'image_url': 'N/A',
-                'image_urls': [],  # Multiple images!
+                'image_urls': [],
                 'distance_km': 0,
                 'property_type': 'N/A',
             }
-            
-            # Name
+
+            # Get full card text for fallback parsing
+            card_text = ""
             try:
-                name_elem = property_card.find_element(By.CSS_SELECTOR, "[data-testid='title']")
-                data['name'] = name_elem.text.strip()
+                card_text = property_card.text
             except:
-                pass
-            
-            # Location/Distance
-            try:
-                location_elem = property_card.find_element(By.CSS_SELECTOR, "[data-testid='distance']")
-                location_text = location_elem.text.strip()
-                
-                # Extract distance and convert miles to km if needed
-                km_match = re.search(r'(\d+[,.]?\d*)\s*km', location_text)
-                miles_match = re.search(r'(\d+[,.]?\d*)\s*(?:mile|miles)', location_text)
-                
+                return None
+
+            # ===== NAME =====
+            name_selectors = [
+                "[data-testid='title']",
+                "h3", "h2",
+                "a[data-testid='title-link']",
+                "[class*='title']",
+            ]
+            for sel in name_selectors:
+                try:
+                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
+                    text = elem.text.strip()
+                    if text and len(text) > 2 and len(text) < 200:
+                        data['name'] = text
+                        break
+                except:
+                    continue
+            # Text fallback: first line is usually the name
+            if data['name'] == 'N/A' and card_text:
+                lines = [l.strip() for l in card_text.split('\n') if l.strip()]
+                for line in lines:
+                    if len(line) > 3 and not re.match(r'^[\d.,]+$', line) and 'CHF' not in line:
+                        data['name'] = line[:100]
+                        break
+
+            # ===== URL =====
+            url_selectors = [
+                "a[data-testid='title-link']",
+                "a[data-testid='property-card-desktop-single-image']",
+                "a[href*='/hotel/']",
+                "a[href*='booking.com']",
+            ]
+            for sel in url_selectors:
+                try:
+                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
+                    href = elem.get_attribute('href')
+                    if href and 'booking.com' in href:
+                        data['url'] = href
+                        break
+                except:
+                    continue
+            # Fallback: any <a> with booking.com
+            if data['url'] == 'N/A':
+                try:
+                    all_links = property_card.find_elements(By.TAG_NAME, "a")
+                    for link in all_links:
+                        href = link.get_attribute('href') or ''
+                        if 'booking.com' in href and '/hotel/' in href:
+                            data['url'] = href
+                            break
+                except:
+                    pass
+
+            # ===== LOCATION/DISTANCE =====
+            loc_selectors = [
+                "[data-testid='distance']",
+                "[data-testid='address']",
+                "[class*='distance']",
+            ]
+            for sel in loc_selectors:
+                try:
+                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
+                    data['location'] = elem.text.strip()
+                    km_match = re.search(r'(\d+[,.]?\d*)\s*km', data['location'])
+                    if km_match:
+                        data['distance_km'] = float(km_match.group(1).replace(',', '.'))
+                    break
+                except:
+                    continue
+            # Text fallback: look for "X km" pattern
+            if data['location'] == 'N/A':
+                km_match = re.search(r'(\d+[,.]?\d*)\s*km\s*(?:vom|from|zum|entfernt)', card_text, re.IGNORECASE)
                 if km_match:
-                    distance_km = float(km_match.group(1).replace(',', '.'))
-                    data['location'] = f"{distance_km:.1f} km vom Zentrum"
-                    data['distance_km'] = distance_km
-                elif miles_match:
-                    distance_miles = float(miles_match.group(1).replace(',', '.'))
-                    distance_km = distance_miles * 1.60934  # Convert to km
-                    data['location'] = f"{distance_km:.1f} km vom Zentrum"
-                    data['distance_km'] = distance_km
-                else:
-                    data['location'] = location_text
-            except:
-                pass
-            
-            # Price
-            try:
-                price_elem = property_card.find_element(By.CSS_SELECTOR, "[data-testid='price-and-discounted-price']")
-                price_text = price_elem.text.strip()
-                
-                # Extract number from "CHF 250" or "250"
-                price_match = re.search(r'[\d\s]+', price_text.replace('.', '').replace(' ', ''))
-                if price_match:
-                    data['price_per_night'] = int(price_match.group(0))
-            except:
-                pass
-            
-            # Rating (Booking uses 1-10 scale)
-            try:
-                rating_elem = property_card.find_element(By.CSS_SELECTOR, "[data-testid='review-score'] div")
-                rating_text = rating_elem.text.strip()
-                rating_match = re.search(r'(\d+[,.]?\d*)', rating_text)
-                if rating_match:
-                    # Convert 8.5/10 to 4.25/5 for consistency
-                    booking_rating = float(rating_match.group(1).replace(',', '.'))
-                    data['rating'] = round(booking_rating / 2, 2)  # 10-point to 5-point scale
-            except:
-                pass
-            
-            # Number of reviews
-            try:
-                reviews_elem = property_card.find_element(By.CSS_SELECTOR, "[data-testid='review-score'] div:nth-child(2)")
-                reviews_text = reviews_elem.text.strip()
-                reviews_match = re.search(r'(\d+)', reviews_text)
-                if reviews_match:
-                    data['num_reviews'] = int(reviews_match.group(1))
-            except:
-                pass
-            
-            # URL
-            try:
-                link_elem = property_card.find_element(By.CSS_SELECTOR, "a[data-testid='title-link']")
-                data['url'] = link_elem.get_attribute('href')
-            except:
-                pass
-            
+                    dist = float(km_match.group(1).replace(',', '.'))
+                    data['location'] = f"{dist:.1f} km vom Zentrum"
+                    data['distance_km'] = dist
+
+            # ===== PRICE =====
+            price_selectors = [
+                "[data-testid='price-and-discounted-price']",
+                "[data-testid='price']",
+                "[class*='price']",
+                "span[class*='Price']",
+            ]
+            for sel in price_selectors:
+                try:
+                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
+                    price_text = elem.text.strip()
+                    price_match = re.search(r'(?:CHF|Fr\.?|€|\$)\s*([\d\'.,\s]+)', price_text)
+                    if price_match:
+                        price_str = price_match.group(1).replace("'", "").replace(",", "").replace(".", "").replace(" ", "")
+                        if price_str.isdigit():
+                            data['price_per_night'] = int(price_str)
+                            break
+                except:
+                    continue
+            # Text fallback: look for "CHF 123" pattern
+            if data['price_per_night'] == 0:
+                price_matches = re.findall(r'(?:CHF|Fr\.?)\s*([\d\'.,]+)', card_text)
+                for pm in price_matches:
+                    price_str = pm.replace("'", "").replace(",", "").replace(".", "").replace(" ", "")
+                    if price_str.isdigit():
+                        price = int(price_str)
+                        if 10 < price < 50000:  # Reasonable price range
+                            data['price_per_night'] = price
+                            break
+            # Booking shows the total for the stay ("2 Nächte, 2 Erwachsene ... CHF 331")
+            nights_match = re.search(r'(\d+)\s*Nächte', card_text)
+            if data['price_per_night'] and nights_match and int(nights_match.group(1)) > 1:
+                data['total_price'] = data['price_per_night']
+                data['price_per_night'] = round(data['total_price'] / int(nights_match.group(1)))
+
+            # ===== RATING & REVIEWS =====
+            # Try data-testid selectors first
+            review_selectors = [
+                "[data-testid='review-score']",
+                "[aria-label*='ewertung']",
+                "[aria-label*='score']",
+                "[class*='review-score']",
+            ]
+            for sel in review_selectors:
+                try:
+                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
+                    rev_text = elem.text.strip()
+                    if rev_text:
+                        rm = re.search(r'(\d+[,.]?\d)', rev_text)
+                        if rm:
+                            rating = float(rm.group(1).replace(',', '.'))
+                            if rating > 5:
+                                data['rating'] = round(rating / 2, 2)
+                            else:
+                                data['rating'] = rating
+                        revc = re.search(r'([\d.]+)\s*(?:Bewertung|review)', rev_text, re.IGNORECASE)
+                        if revc:
+                            data['num_reviews'] = int(revc.group(1).replace('.', '').replace(',', ''))
+                        break
+                except:
+                    continue
+
+            # Text fallback for rating: "8,5 Fabelhaft" or "Fabelhaft 8,5"
+            if data['rating'] is None:
+                rating_words = ['Fabelhaft', 'Sehr gut', 'Gut', 'Hervorragend', 'Fantastisch',
+                                'Grossartig', 'Großartig', 'Ansprechend', 'Okay', 'Ausgezeichnet',
+                                'Wunderbar', 'Exzellent', 'Wonderful', 'Excellent', 'Very good',
+                                'Good', 'Superb', 'Exceptional']
+                for word in rating_words:
+                    # "8,5 Fabelhaft" or "Fabelhaft 8,5"
+                    pattern = rf'(\d[.,]\d)\s*{word}|{word}\s*(\d[.,]\d)'
+                    m = re.search(pattern, card_text, re.IGNORECASE)
+                    if m:
+                        rating_str = (m.group(1) or m.group(2)).replace(',', '.')
+                        rating = float(rating_str)
+                        if rating > 5:
+                            data['rating'] = round(rating / 2, 2)
+                        else:
+                            data['rating'] = rating
+                        break
+
+            # Text fallback for reviews: "1.234 Bewertungen"
+            if data['num_reviews'] == 0:
+                rev_match = re.search(r'([\d.]+)\s*Bewertung', card_text, re.IGNORECASE)
+                if rev_match:
+                    rev_str = rev_match.group(1).replace('.', '').replace(',', '')
+                    if rev_str.isdigit():
+                        data['num_reviews'] = int(rev_str)
+
             # Images - SCRAPE MULTIPLE (5-20)!
             try:
                 # Try to get more images by hovering over the property card
@@ -279,8 +382,12 @@ class BookingSearcher:
             except:
                 pass
             
+            # Ensure compatibility with app.py HTML report (uses 'title' not 'name')
+            data['title'] = data['name']
+            data['platform'] = 'Booking.com'
+
             return data
-            
+
         except Exception as e:
             print(f"❌ Error extracting property: {e}")
             return None
@@ -468,7 +575,14 @@ class BookingSearcher:
             
             for idx, prop in enumerate(properties[:max_results], 1):
                 print(f"  [{idx}/{max_results}] ", end='', flush=True)
-                
+
+                # Booking only renders cards near the viewport - offscreen cards have empty text
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prop)
+                    time.sleep(0.5)
+                except:
+                    pass
+
                 data = self.extract_property_data(prop)
                 
                 if data and data['name'] != "N/A":
@@ -503,39 +617,45 @@ class BookingSearcher:
         """Filter properties based on criteria"""
         filtered = []
         filters = self.config.get('filters', {})
-        
+
         # Get radius in km
         radius_km = self.config.get('location_settings', {}).get('radius_km', 999)
-        
+
+        # Smart review filter: if ALL properties have 0 reviews, scraping is broken
+        # → skip review filter entirely to avoid losing all results
+        all_zero_reviews = all(p.get('num_reviews', 0) == 0 for p in properties)
+        if all_zero_reviews and len(properties) > 5:
+            print("⚠️ Alle Reviews = 0 → Booking hat HTML geändert, überspringe Review-Filter")
+
         for idx, prop in enumerate(properties, 1):
             print(f"  [{idx}/{len(properties)}] ", end='', flush=True)
-            
+
             # Price filter - CRITICAL: Filter in Python since URL filter doesn't work!
             max_price = filters.get('max_price', 999999)
             if prop['price_per_night'] > max_price:
                 print(f"❌ Preis: CHF {prop['price_per_night']} > {max_price}")
                 continue
-            
+
             # Distance filter
             if prop['distance_km'] > radius_km:
                 print(f"❌ Distanz: {prop['distance_km']} km > {radius_km} km")
                 continue
-            
+
             # Rating filter (convert to 5-point scale)
             min_rating = filters.get('min_rating', 0)
             if prop['rating'] and prop['rating'] < min_rating:
                 print(f"❌ Rating: {prop['rating']} < {min_rating}")
                 continue
-            
-            # Reviews filter
+
+            # Reviews filter (skip if scraping is broken)
             min_reviews = filters.get('min_reviews', 0)
-            if prop['num_reviews'] < min_reviews:
+            if not all_zero_reviews and prop['num_reviews'] < min_reviews:
                 print(f"❌ Reviews: {prop['num_reviews']} < {min_reviews}")
                 continue
-            
+
             print(f"✓ {prop['name'][:40]}")
             filtered.append(prop)
-        
+
         return filtered
     
     def save_results(self):

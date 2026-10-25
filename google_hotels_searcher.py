@@ -18,6 +18,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+from chrome_driver import create_driver
+
 
 class GoogleHotelsSearcher:
     def __init__(self, config_path: str = None):
@@ -43,7 +45,7 @@ class GoogleHotelsSearcher:
         chrome_options.add_argument('--disable-software-rasterizer')
         chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--disable-setuid-sandbox')
-        chrome_options.add_argument('--single-process')  # Single process for Railway
+        # No --single-process: unsupported by Chrome, crashes headless=new on navigation
         chrome_options.add_argument('--no-zygote')  # No zygote for Railway
         chrome_options.add_argument('--disable-dev-tools')  # Disable DevTools
         
@@ -84,8 +86,7 @@ class GoogleHotelsSearcher:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        print("🚀 Starting Chrome with AGGRESSIVE memory limits for Railway...")
-        self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver = create_driver(chrome_options)
         
         # Remove webdriver flag
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -234,35 +235,41 @@ class GoogleHotelsSearcher:
             
             # Rating - Google uses 5-star scale
             try:
-                # Look for patterns like "4.5" or "4,5"
                 rating_patterns = [
-                    r'(\d[.,]\d)\s*(?:von|out of|★)',
+                    r'(\d[.,]\d)\s*(?:von|out of|★|/)',
                     r'(\d[.,]\d)\s*\(',
                     r'★\s*(\d[.,]\d)',
+                    r'(\d[.,]\d)\s*Sterne',
+                    r'Bewertung[:\s]*(\d[.,]\d)',
                 ]
-                
+
                 for pattern in rating_patterns:
-                    rating_match = re.search(pattern, card_text)
+                    rating_match = re.search(pattern, card_text, re.IGNORECASE)
                     if rating_match:
                         rating_str = rating_match.group(1).replace(',', '.')
-                        data['rating'] = float(rating_str)
-                        break
+                        rating_val = float(rating_str)
+                        if 1.0 <= rating_val <= 5.0:
+                            data['rating'] = rating_val
+                            break
             except:
                 pass
-            
+
             # Reviews count
             try:
                 review_patterns = [
-                    r'\((\d[\d,]*)\s*(?:Bewertungen|reviews)',
-                    r'(\d[\d,]*)\s*(?:Bewertungen|reviews)',
+                    r'\((\d[\d.,]*)\s*(?:Bewertung|review|Rezension)',
+                    r'(\d[\d.,]*)\s*(?:Bewertung|review|Rezension)',
+                    r'\((\d[\d.,]*)\)',  # Just a number in parentheses
                 ]
-                
+
                 for pattern in review_patterns:
-                    reviews_match = re.search(pattern, card_text.replace('.', ''))
+                    reviews_match = re.search(pattern, card_text, re.IGNORECASE)
                     if reviews_match:
-                        reviews_str = reviews_match.group(1).replace(',', '').replace('.', '')
-                        data['num_reviews'] = int(reviews_str)
-                        break
+                        reviews_str = reviews_match.group(1).replace('.', '').replace(',', '')
+                        num = int(reviews_str)
+                        if num > 3:  # Avoid matching rating numbers
+                            data['num_reviews'] = num
+                            break
             except:
                 pass
             
@@ -383,20 +390,22 @@ class GoogleHotelsSearcher:
                 try:
                     all_divs = self.driver.find_elements(By.TAG_NAME, "div")
                     print(f"📊 Analysiere {len(all_divs)} DIVs...")
-                    
+
                     for div in all_divs:
                         try:
                             text = div.text
-                            # Hotel cards have: price, name, rating
-                            if ('CHF' in text or 'Fr.' in text or '$' in text) and \
-                               len(text) > 100 and len(text) < 800 and \
-                               ('★' in text or 'star' in text.lower() or 'stern' in text.lower()):
+                            # Hotel cards have: price + some length
+                            has_price = bool(re.search(r'(?:CHF|Fr\.|€|\$)\s*\d+', text))
+                            has_rating = bool(re.search(r'\d[.,]\d', text))
+                            right_size = 50 < len(text) < 1000
+
+                            if has_price and has_rating and right_size:
                                 hotels.append(div)
                                 if len(hotels) >= 30:
                                     break
                         except:
                             continue
-                    
+
                     if hotels:
                         print(f"✓ Fallback: {len(hotels)} Hotel-ähnliche Cards gefunden\n")
                 except Exception as e:
@@ -424,8 +433,18 @@ class GoogleHotelsSearcher:
                 data = self.extract_hotel_data(hotel)
                 
                 if data and data['name'] != "N/A" and data['price_per_night'] > 0:
-                    all_hotels.append(data)
-                    print(f"✓ {data['name'][:50]} - CHF {data['price_per_night']}")
+                    # Filter out Google Ads / sponsored results
+                    name_lower = data['name'].lower()
+                    ad_keywords = ['top 10', 'entdecken', 'geheimtipp', 'günstig', 'buchen sie',
+                                   'best deal', 'official site', 'offizielle', 'jetzt buchen',
+                                   'angebote', 'unsere top', 'vergleichen']
+                    is_ad = any(kw in name_lower for kw in ad_keywords)
+
+                    if is_ad:
+                        print(f"⚠️ Werbung übersprungen: {data['name'][:50]}")
+                    else:
+                        all_hotels.append(data)
+                        print(f"✓ {data['name'][:50]} - CHF {data['price_per_night']}")
                 else:
                     print("❌")
                 

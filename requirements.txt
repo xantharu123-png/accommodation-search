@@ -21,6 +21,9 @@ urllib3==2.1.0
 # Google Maps
 googlemaps==4.10.0
 
+# AI Review Analysis (review_analyzer.py imports it at module level)
+anthropic>=0.34.0
+
 # Date/Time
 python-dateutil==2.8.2
 

@@ -19,6 +19,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import pandas as pd
 
+from chrome_driver import create_driver
+
 
 class AirbnbSearcher:
     def __init__(self, config_path: str = "airbnb_search_config.json"):
@@ -52,9 +54,9 @@ class AirbnbSearcher:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver = create_driver(chrome_options)
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
+
     def build_search_url(self) -> str:
         """Build Airbnb search URL with parameters"""
         params = self.config['search_parameters']
@@ -213,20 +215,35 @@ class AirbnbSearcher:
             # Price - try multiple selectors
             data['price_per_night'] = None
             try:
-                # Method 1: Try to find price in any span containing "CHF"
-                all_text = listing_element.text
-                # Look for patterns like "CHF 150" or "CHF 1'500" or "150 CHF"
-                price_patterns = [
-                    r'CHF\s*(\d[\d\'\s]*\d|\d+)',  # CHF 150 or CHF 1'500
-                    r'(\d[\d\'\s]*\d|\d+)\s*CHF',   # 150 CHF
-                ]
-                
-                for pattern in price_patterns:
-                    price_match = re.search(pattern, all_text.replace("'", ""))
-                    if price_match:
-                        price_str = price_match.group(1).replace("'", "").replace(" ", "")
-                        data['price_per_night'] = int(price_str)
-                        break
+                # Airbnb.ch shows "Fr. 330 Gesamtpreis" (total for the stay) or "CHF 150 / Nacht".
+                # Discounted listings show the old price first ("Fr. 467\nFr. 330 Gesamtpreis"),
+                # so labelled prices are checked before the generic patterns.
+                all_text = listing_element.text.replace("'", "").replace("’", "")
+                currency = r'(?:CHF|Fr\.)'
+                amount = r'(\d[\d ]*\d|\d)'
+
+                night_match = re.search(currency + r'\s*' + amount + r'\s*(?:pro Nacht|/\s*Nacht|Nacht|per night|night)', all_text, re.IGNORECASE)
+                total_match = re.search(currency + r'\s*' + amount + r'\s*(?:Gesamtpreis|insgesamt|total)', all_text, re.IGNORECASE)
+
+                if night_match:
+                    data['price_per_night'] = int(night_match.group(1).replace(" ", ""))
+                elif total_match:
+                    # Converted to price per night in search() (needs the number of nights)
+                    data['total_price'] = int(total_match.group(1).replace(" ", ""))
+                    data['price_per_night'] = data['total_price']
+                else:
+                    # Look for patterns like "CHF 150", "Fr. 1'500" or "150 CHF"
+                    price_patterns = [
+                        currency + r'\s*' + amount,  # CHF 150 or Fr. 1'500
+                        amount + r'\s*CHF',          # 150 CHF
+                    ]
+
+                    for pattern in price_patterns:
+                        price_match = re.search(pattern, all_text)
+                        if price_match:
+                            price_str = price_match.group(1).replace(" ", "")
+                            data['price_per_night'] = int(price_str)
+                            break
                 
                 # If still not found, try specific CSS selectors
                 if data['price_per_night'] is None:
@@ -401,8 +418,8 @@ class AirbnbSearcher:
                                 # Real photos have dimensions in URL like im_w_720, im_w_480, etc.
                                 # Icons often have im_w_200 or smaller
                                 if 'im_w_' in img_url:
-                                    # Extract width from URL
-                                    import re
+                                    # Extract width from URL (module-level re - a local import here
+                                    # made re unbound for the bedroom/guest extraction below)
                                     width_match = re.search(r'im_w_(\d+)', img_url)
                                     if width_match:
                                         width = int(width_match.group(1))
@@ -731,8 +748,11 @@ class AirbnbSearcher:
                                 if data['price_per_night'] and num_nights > 0:
                                     # Get max price from either key
                                     max_price = self.config['filters'].get('max_price') or self.config['filters'].get('max_price_per_night_chf', 999999)
+                                    # Airbnb labelled it as total price ("Gesamtpreis")
+                                    if data.get('total_price'):
+                                        data['price_per_night'] = round(data['total_price'] / num_nights)
                                     # If price seems too high, it's likely the total price
-                                    if data['price_per_night'] > max_price * 2:
+                                    elif data['price_per_night'] > max_price * 2:
                                         data['total_price'] = data['price_per_night']
                                         data['price_per_night'] = round(data['price_per_night'] / num_nights)
                                 

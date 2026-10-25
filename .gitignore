@@ -1,2 +1,8 @@
 # Local Netlify folder
 .netlify
+
+# Python cache, local data, search output
+__pycache__/
+*.pyc
+favorites.db
+results/
