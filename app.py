@@ -208,7 +208,8 @@ def run_search(search_id: str, params: SearchParams):
         
         # Run search based on platforms
         all_results = []
-        
+        failed_platforms = []
+
         if "all" in params.platforms or len(params.platforms) == 0:
             # Run combined search
             from combined_search import CombinedAccommodationSearch
@@ -220,27 +221,40 @@ def run_search(search_id: str, params: SearchParams):
                 all_results.extend(results)
         else:
             # Run individual platforms
+
+            def run_platform(label, searcher_class):
+                """Run one platform - a crash (e.g. Chrome renderer out of memory)
+                must not discard the results of the other platforms"""
+                search_status[search_id]["progress"] = f"Suche auf {label}..."
+                searcher = searcher_class(str(config_path))
+                try:
+                    searcher.search()
+                except Exception as e:
+                    print(f"❌ {label} fehlgeschlagen: {e}")
+                    traceback.print_exc()
+                    failed_platforms.append(label)
+                    try:
+                        if searcher.driver:
+                            searcher.driver.quit()
+                    except Exception:
+                        pass
+                all_results.extend(searcher.results)
+
             if "airbnb" in params.platforms:
-                search_status[search_id]["progress"] = "Suche auf Airbnb..."
                 from airbnb_searcher import AirbnbSearcher
-                airbnb = AirbnbSearcher(str(config_path))
-                airbnb.search()
-                all_results.extend(airbnb.results)
-            
+                run_platform("Airbnb", AirbnbSearcher)
+
             if "booking" in params.platforms:
-                search_status[search_id]["progress"] = "Suche auf Booking.com..."
                 from booking_searcher import BookingSearcher
-                booking = BookingSearcher(str(config_path))
-                booking.search()
-                all_results.extend(booking.results)
-            
+                run_platform("Booking.com", BookingSearcher)
+
             if "google_hotels" in params.platforms:
-                search_status[search_id]["progress"] = "Suche auf Google Hotels..."
                 from google_hotels_searcher import GoogleHotelsSearcher
-                google_hotels = GoogleHotelsSearcher(str(config_path))
-                google_hotels.search()
-                all_results.extend(google_hotels.results)
-            
+                run_platform("Google Hotels", GoogleHotelsSearcher)
+
+            if failed_platforms and not all_results:
+                raise RuntimeError(f"Alle Plattformen fehlgeschlagen: {', '.join(failed_platforms)}")
+
             # Legacy platform support (in case old bookmarks exist)
             if "hotelscom" in params.platforms:
                 search_status[search_id]["progress"] = "Hotels.com nicht mehr unterstützt, verwende Google Hotels..."
@@ -441,7 +455,7 @@ async function addToFavorites(index) {
         # Update status
         search_status[search_id] = {
             "status": "completed",
-            "progress": "Fertig!",
+            "progress": "Fertig!" + (f" (fehlgeschlagen: {', '.join(failed_platforms)})" if failed_platforms else ""),
             "results_count": len(all_results),
             "html_report_url": html_url,
             "csv_file_url": None  # Add CSV if needed

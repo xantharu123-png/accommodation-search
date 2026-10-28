@@ -5,6 +5,7 @@ Sucht Hotels & Apartments auf Booking.com
 """
 
 import json
+import os
 import time
 import re
 from datetime import datetime
@@ -470,8 +471,9 @@ class BookingSearcher:
             print("📜 Lade Suchergebnisse...")
             time.sleep(3)
             
-            # Scroll to load more results
-            for i in range(3):
+            # Scroll to load more results - not in LOW_MEMORY mode (Render Free):
+            # the first 25 cards are enough there, and 75 loaded cards crashed the renderer
+            for i in range(0 if os.environ.get('LOW_MEMORY') == '1' else 3):
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             
@@ -586,8 +588,10 @@ class BookingSearcher:
                 data = self.extract_property_data(prop)
                 
                 if data and data['name'] != "N/A":
-                    # Get more images from detail page (if we only have 1)
-                    if data.get('url') and len(data.get('image_urls', [])) <= 1:
+                    # Get more images from detail page (if we only have 1).
+                    # Skipped in LOW_MEMORY mode (Render Free): a second tab per property
+                    # costs minutes there and the detail page currently yields 0 images anyway.
+                    if data.get('url') and len(data.get('image_urls', [])) <= 1 and os.environ.get('LOW_MEMORY') != '1':
                         print("🖼️  ", end='', flush=True)
                         detail_images = self.get_detail_page_images(data['url'])
                         if detail_images and len(detail_images) > 1:

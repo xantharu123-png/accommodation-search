@@ -381,17 +381,25 @@ class AirbnbSearcher:
         }
         
         try:
-            # Open listing in new tab
-            self.driver.execute_script(f"window.open('{url}', '_blank');")
-            self.driver.switch_to.window(self.driver.window_handles[-1])
-            
+            # Open listing in the same tab - the search results are already extracted,
+            # and a second tab doubles Chrome's memory/CPU load (Render Free: 0.1 CPU)
+            self.driver.get(url)
+
+            # Wait for the title section (client-rendered, slow on low CPU)
+            try:
+                WebDriverWait(self.driver, 30).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "[data-section-id='TITLE_DEFAULT']"))
+                )
+            except TimeoutException:
+                pass
+
             time.sleep(self.config['scraping_settings']['wait_time_seconds'])
-            
+
             # 📸 Get image gallery (5-20 images)
             try:
                 # Wait a bit more for gallery to load
                 time.sleep(1)
-                
+
                 # Find all images in the gallery - try multiple selectors!
                 image_selectors = [
                     "img[src*='pictures']",  # Main gallery images
@@ -399,15 +407,18 @@ class AirbnbSearcher:
                     "div[data-section-id='HERO_DEFAULT'] img",  # Hero section
                     "picture img",  # Picture elements
                 ]
-                
+
                 image_urls = []
                 for selector in image_selectors:
                     try:
-                        image_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                        
-                        for img in image_elements[:30]:  # Check more images
-                            img_url = img.get_attribute('src') or img.get_attribute('data-original-uri')
-                            
+                        # One round trip per selector instead of two per image
+                        candidate_urls = self.driver.execute_script(
+                            "return Array.from(document.querySelectorAll(arguments[0])).slice(0, 30)"
+                            ".map(img => img.src || img.getAttribute('data-original-uri'));",
+                            selector
+                        )
+
+                        for img_url in candidate_urls:  # Check more images
                             # FILTER OUT property type icons and platform assets
                             if img_url and 'pictures' in img_url:
                                 # Skip Airbnb platform assets (house icons, etc.)
@@ -451,17 +462,16 @@ class AirbnbSearcher:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
                 time.sleep(1)
                 
-                # Find review elements
-                review_elements = self.driver.find_elements(By.CSS_SELECTOR, "[data-review-id], .r1bctolv")
-                
+                # Find review elements (texts in one round trip)
+                review_texts = self.driver.execute_script(
+                    "return Array.from(document.querySelectorAll('[data-review-id], .r1bctolv'))"
+                    ".slice(0, 30).map(el => el.innerText);"
+                )
+
                 reviews = []
-                for review in review_elements[:30]:  # Max 30 reviews
-                    try:
-                        review_text = review.text
-                        if review_text and len(review_text) > 20:  # Filter short reviews
-                            reviews.append(review_text)
-                    except:
-                        continue
+                for review_text in review_texts:  # Max 30 reviews
+                    if review_text and len(review_text) > 20:  # Filter short reviews
+                        reviews.append(review_text)
                 
                 if len(reviews) >= 3:  # Only if we have at least 3 reviews
                     details['reviews'] = reviews[:30]
@@ -539,8 +549,12 @@ class AirbnbSearcher:
             
             # Extract all amenity text
             try:
-                amenity_elements = self.driver.find_elements(By.CSS_SELECTOR, "[data-section-id='AMENITIES_DEFAULT'] div")
-                amenities_text = " ".join([elem.text.lower() for elem in amenity_elements])
+                # Whole section text in one round trip - reading every nested div
+                # separately took minutes per listing on Render Free
+                amenities_text = self.driver.execute_script(
+                    "const s = document.querySelector(\"[data-section-id='AMENITIES_DEFAULT']\");"
+                    "return s ? s.innerText : '';"
+                ).lower()
                 details['amenities'] = amenities_text
                 
                 # Check for specific amenities
@@ -593,18 +607,10 @@ class AirbnbSearcher:
                 
             except Exception as e:
                 print(f"⚠ Fehler beim Extrahieren der Ausstattung: {e}")
-            
-            # Close tab and switch back
-            self.driver.close()
-            self.driver.switch_to.window(self.driver.window_handles[0])
-            
+
         except Exception as e:
             print(f"⚠ Fehler beim Laden der Detail-Seite: {e}")
-            # Make sure we're back on main window
-            if len(self.driver.window_handles) > 1:
-                self.driver.close()
-                self.driver.switch_to.window(self.driver.window_handles[0])
-        
+
         return details
     
     def filter_results(self, listing: Dict, debug: bool = False) -> tuple[bool, str]:
