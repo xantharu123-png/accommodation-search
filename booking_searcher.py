@@ -155,6 +155,61 @@ class BookingSearcher:
         except:
             pass
     
+    NAME_SELECTORS = [
+        "[data-testid='title']",
+        "h3", "h2",
+        "a[data-testid='title-link']",
+        "[class*='title']",
+    ]
+    URL_SELECTORS = [
+        "a[data-testid='title-link']",
+        "a[data-testid='property-card-desktop-single-image']",
+        "a[href*='/hotel/']",
+        "a[href*='booking.com']",
+    ]
+    LOC_SELECTORS = [
+        "[data-testid='distance']",
+        "[data-testid='address']",
+        "[class*='distance']",
+    ]
+    PRICE_SELECTORS = [
+        "[data-testid='price-and-discounted-price']",
+        "[data-testid='price']",
+        "[class*='price']",
+        "span[class*='Price']",
+    ]
+    REVIEW_SELECTORS = [
+        "[data-testid='review-score']",
+        "[aria-label*='ewertung']",
+        "[aria-label*='score']",
+        "[class*='review-score']",
+    ]
+    IMAGE_SELECTOR = "img[data-testid='image'], img.bh-photo-grid-item, img[class*='gallery']"
+
+    # Reads everything extract_property_data needs from a card in ONE WebDriver round trip.
+    # On Render Free (0.1 CPU) each round trip takes seconds, and the former ~25
+    # find_element/.text calls per card kept a search busy for over an hour.
+    # Like Selenium's .text, unrendered elements give '' and non-breaking spaces become spaces.
+    CARD_SNAPSHOT_JS = """
+        const [card, selectors, imageSelector, done] = arguments;
+        // Booking only renders cards near the viewport - offscreen cards have empty text
+        card.scrollIntoView({block: 'center'});
+        setTimeout(() => {
+            const text = el => el.getClientRects().length ? (el.innerText || '').replace(/\\u00a0/g, ' ').trim() : '';
+            const first = {};
+            for (const sel of selectors) {
+                const el = card.querySelector(sel);
+                if (el) first[sel] = {text: text(el), href: el.href || ''};
+            }
+            done({
+                text: text(card),
+                first: first,
+                links: Array.from(card.querySelectorAll('a')).map(a => a.href || ''),
+                images: Array.from(card.querySelectorAll(imageSelector)).slice(0, 20).map(img => img.src || ''),
+            });
+        }, 500);
+    """
+
     def extract_property_data(self, property_card) -> Optional[Dict]:
         """Extract data from a single property card - robust with text fallback"""
         try:
@@ -171,29 +226,26 @@ class BookingSearcher:
                 'property_type': 'N/A',
             }
 
-            # Get full card text for fallback parsing
-            card_text = ""
             try:
-                card_text = property_card.text
+                snap = self.driver.execute_async_script(
+                    self.CARD_SNAPSHOT_JS, property_card,
+                    self.NAME_SELECTORS + self.URL_SELECTORS + self.LOC_SELECTORS
+                    + self.PRICE_SELECTORS + self.REVIEW_SELECTORS,
+                    self.IMAGE_SELECTOR)
             except:
                 return None
+            # First match per selector: {'text': ..., 'href': ...}
+            first = snap['first']
+
+            # Get full card text for fallback parsing
+            card_text = snap['text']
 
             # ===== NAME =====
-            name_selectors = [
-                "[data-testid='title']",
-                "h3", "h2",
-                "a[data-testid='title-link']",
-                "[class*='title']",
-            ]
-            for sel in name_selectors:
-                try:
-                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
-                    text = elem.text.strip()
-                    if text and len(text) > 2 and len(text) < 200:
-                        data['name'] = text
-                        break
-                except:
-                    continue
+            for sel in self.NAME_SELECTORS:
+                text = first.get(sel, {}).get('text', '')
+                if text and len(text) > 2 and len(text) < 200:
+                    data['name'] = text
+                    break
             # Text fallback: first line is usually the name
             if data['name'] == 'N/A' and card_text:
                 lines = [l.strip() for l in card_text.split('\n') if l.strip()]
@@ -203,49 +255,26 @@ class BookingSearcher:
                         break
 
             # ===== URL =====
-            url_selectors = [
-                "a[data-testid='title-link']",
-                "a[data-testid='property-card-desktop-single-image']",
-                "a[href*='/hotel/']",
-                "a[href*='booking.com']",
-            ]
-            for sel in url_selectors:
-                try:
-                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
-                    href = elem.get_attribute('href')
-                    if href and 'booking.com' in href:
-                        data['url'] = href
-                        break
-                except:
-                    continue
+            for sel in self.URL_SELECTORS:
+                href = first.get(sel, {}).get('href')
+                if href and 'booking.com' in href:
+                    data['url'] = href
+                    break
             # Fallback: any <a> with booking.com
             if data['url'] == 'N/A':
-                try:
-                    all_links = property_card.find_elements(By.TAG_NAME, "a")
-                    for link in all_links:
-                        href = link.get_attribute('href') or ''
-                        if 'booking.com' in href and '/hotel/' in href:
-                            data['url'] = href
-                            break
-                except:
-                    pass
+                for href in snap['links']:
+                    if 'booking.com' in href and '/hotel/' in href:
+                        data['url'] = href
+                        break
 
             # ===== LOCATION/DISTANCE =====
-            loc_selectors = [
-                "[data-testid='distance']",
-                "[data-testid='address']",
-                "[class*='distance']",
-            ]
-            for sel in loc_selectors:
-                try:
-                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
-                    data['location'] = elem.text.strip()
+            for sel in self.LOC_SELECTORS:
+                if sel in first:
+                    data['location'] = first[sel]['text']
                     km_match = re.search(r'(\d+[,.]?\d*)\s*km', data['location'])
                     if km_match:
                         data['distance_km'] = float(km_match.group(1).replace(',', '.'))
                     break
-                except:
-                    continue
             # Text fallback: look for "X km" pattern
             if data['location'] == 'N/A':
                 km_match = re.search(r'(\d+[,.]?\d*)\s*km\s*(?:vom|from|zum|entfernt)', card_text, re.IGNORECASE)
@@ -255,24 +284,16 @@ class BookingSearcher:
                     data['distance_km'] = dist
 
             # ===== PRICE =====
-            price_selectors = [
-                "[data-testid='price-and-discounted-price']",
-                "[data-testid='price']",
-                "[class*='price']",
-                "span[class*='Price']",
-            ]
-            for sel in price_selectors:
-                try:
-                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
-                    price_text = elem.text.strip()
-                    price_match = re.search(r'(?:CHF|Fr\.?|€|\$)\s*([\d\'.,\s]+)', price_text)
-                    if price_match:
-                        price_str = price_match.group(1).replace("'", "").replace(",", "").replace(".", "").replace(" ", "")
-                        if price_str.isdigit():
-                            data['price_per_night'] = int(price_str)
-                            break
-                except:
+            for sel in self.PRICE_SELECTORS:
+                if sel not in first:
                     continue
+                price_text = first[sel]['text']
+                price_match = re.search(r'(?:CHF|Fr\.?|€|\$)\s*([\d\'.,\s]+)', price_text)
+                if price_match:
+                    price_str = price_match.group(1).replace("'", "").replace(",", "").replace(".", "").replace(" ", "")
+                    if price_str.isdigit():
+                        data['price_per_night'] = int(price_str)
+                        break
             # Text fallback: look for "CHF 123" pattern
             if data['price_per_night'] == 0:
                 price_matches = re.findall(r'(?:CHF|Fr\.?)\s*([\d\'.,]+)', card_text)
@@ -291,16 +312,9 @@ class BookingSearcher:
 
             # ===== RATING & REVIEWS =====
             # Try data-testid selectors first
-            review_selectors = [
-                "[data-testid='review-score']",
-                "[aria-label*='ewertung']",
-                "[aria-label*='score']",
-                "[class*='review-score']",
-            ]
-            for sel in review_selectors:
+            for sel in self.REVIEW_SELECTORS:
                 try:
-                    elem = property_card.find_element(By.CSS_SELECTOR, sel)
-                    rev_text = elem.text.strip()
+                    rev_text = first.get(sel, {}).get('text', '')
                     if rev_text:
                         rm = re.search(r'(\d+[,.]?\d)', rev_text)
                         if rm:
@@ -344,44 +358,21 @@ class BookingSearcher:
                         data['num_reviews'] = int(rev_str)
 
             # Images - SCRAPE MULTIPLE (5-20)!
-            try:
-                # Try to get more images by hovering over the property card
-                try:
-                    # Move mouse to property to trigger gallery
-                    from selenium.webdriver.common.action_chains import ActionChains
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element(property_card).perform()
-                    time.sleep(0.5)  # Wait for gallery to load
-                except:
-                    pass
-                
-                # Find all images in the property card
-                image_elements = property_card.find_elements(By.CSS_SELECTOR, "img[data-testid='image'], img.bh-photo-grid-item, img[class*='gallery']")
-                
-                image_urls = []
-                for img in image_elements[:20]:  # Max 20 images
-                    img_url = img.get_attribute('src')
-                    if img_url and img_url not in image_urls and 'http' in img_url:
-                        # Get high-res version (replace thumbnails)
-                        img_url = img_url.replace('square60', 'max1024x768')
-                        img_url = img_url.replace('square240', 'max1024x768')
-                        img_url = img_url.replace('square200', 'max1024x768')
-                        image_urls.append(img_url)
-                
-                if image_urls:
-                    data['image_urls'] = image_urls
-                    data['image_url'] = image_urls[0]  # First as fallback
-                    print(f"📸 {len(image_urls)} Bilder gefunden")
-                else:
-                    # Fallback to single image
-                    try:
-                        img_elem = property_card.find_element(By.CSS_SELECTOR, "img[data-testid='image']")
-                        data['image_url'] = img_elem.get_attribute('src')
-                        data['image_urls'] = [data['image_url']]
-                    except:
-                        pass
-            except:
-                pass
+            # (Hovering the card to open its gallery was dropped: it still gave only 1 image
+            # and cost an extra round trip per card)
+            image_urls = []
+            for img_url in snap['images']:  # Max 20 images
+                if img_url and img_url not in image_urls and 'http' in img_url:
+                    # Get high-res version (replace thumbnails)
+                    img_url = img_url.replace('square60', 'max1024x768')
+                    img_url = img_url.replace('square240', 'max1024x768')
+                    img_url = img_url.replace('square200', 'max1024x768')
+                    image_urls.append(img_url)
+
+            if image_urls:
+                data['image_urls'] = image_urls
+                data['image_url'] = image_urls[0]  # First as fallback
+                print(f"📸 {len(image_urls)} Bilder gefunden")
             
             # Ensure compatibility with app.py HTML report (uses 'title' not 'name')
             data['title'] = data['name']
@@ -467,8 +458,15 @@ class BookingSearcher:
             # Handle popups
             self.handle_popups()
             
-            # Wait for results
+            # Wait for results - on Render Free (0.1 CPU) the cards can take minutes to
+            # appear, and without them the much slower fallback below would run
             print("📜 Lade Suchergebnisse...")
+            try:
+                WebDriverWait(self.driver, 180).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='property-card']"))
+                )
+            except TimeoutException:
+                print("⚠ Keine Unterkunfts-Karten nach 180s")
             time.sleep(3)
             
             # Scroll to load more results - not in LOW_MEMORY mode (Render Free):
@@ -531,34 +529,26 @@ class BookingSearcher:
                 print("⚠ Standard-Selectors finden nichts! Versuche Fallback...")
                 try:
                     # Save page source for debugging
-                    with open('/tmp/booking_debug.html', 'w', encoding='utf-8') as f:
-                        f.write(self.driver.page_source)
-                    print("📝 Debug HTML saved to /tmp/booking_debug.html")
-                    
-                    # Check if we're blocked
                     page_source = self.driver.page_source
+                    with open('/tmp/booking_debug.html', 'w', encoding='utf-8') as f:
+                        f.write(page_source)
+                    print("📝 Debug HTML saved to /tmp/booking_debug.html")
+
+                    # Check if we're blocked
                     if 'captcha' in page_source.lower() or 'blocked' in page_source.lower():
                         print("🚫 BLOCKED! Booking.com hat uns erkannt!")
                         return
-                    
-                    # Try to find ANY divs that look like property cards
-                    all_divs = self.driver.find_elements(By.TAG_NAME, "div")
-                    print(f"📊 Gefunden: {len(all_divs)} DIVs auf der Seite")
-                    
-                    # Filter for property-like divs (have price, name, rating)
-                    for div in all_divs:
-                        try:
-                            text = div.text
-                            # Property cards typically have: price (CHF), rating number, and reasonable length
-                            if ('CHF' in text or 'EUR' in text or '$' in text) and \
-                               len(text) > 100 and len(text) < 1500 and \
-                               any(char.isdigit() for char in text):
-                                properties.append(div)
-                                if len(properties) >= 20:
-                                    break
-                        except:
-                            continue
-                    
+
+                    # Try to find ANY divs that look like property cards (have price, name, rating).
+                    # Filtered in the browser: a .text call per div takes hours on Render Free.
+                    properties = self.driver.execute_script("""
+                        return Array.from(document.querySelectorAll('div')).filter(div => {
+                            const text = div.getClientRects().length ? div.innerText : '';
+                            // Property cards typically have: price (CHF), rating number, and reasonable length
+                            return /CHF|EUR|\\$/.test(text) && text.length > 100 && text.length < 1500 && /\\d/.test(text);
+                        }).slice(0, 20);
+                    """)
+
                     if properties:
                         print(f"✓ Fallback: {len(properties)} unterkunfts-ähnliche Elemente gefunden\n")
                     
@@ -577,13 +567,6 @@ class BookingSearcher:
             
             for idx, prop in enumerate(properties[:max_results], 1):
                 print(f"  [{idx}/{max_results}] ", end='', flush=True)
-
-                # Booking only renders cards near the viewport - offscreen cards have empty text
-                try:
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", prop)
-                    time.sleep(0.5)
-                except:
-                    pass
 
                 data = self.extract_property_data(prop)
                 

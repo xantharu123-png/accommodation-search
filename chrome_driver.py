@@ -62,6 +62,8 @@ def create_driver(chrome_options: Options) -> webdriver.Chrome:
         driver = webdriver.Chrome(options=chrome_options)
 
     driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
+    # Scripts read whole result lists at once - the default 30s is tight on 0.1 CPU
+    driver.set_script_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
 
     version = driver.capabilities.get('browserVersion', '?')
     print(f"✅ Chrome {version} gestartet ({time.time() - start:.1f}s)", flush=True)
