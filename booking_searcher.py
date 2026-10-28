@@ -210,6 +210,13 @@ class BookingSearcher:
         }, 500);
     """
 
+    # Polled while the results load (one round trip each): the URL if Booking redirected
+    # to an error page, 'cards' once results are there, '' while still loading
+    RESULTS_STATE_JS = """
+        if (location.href.includes('errorc_')) return location.href;
+        return document.querySelector("[data-testid='property-card']") ? 'cards' : '';
+    """
+
     def extract_property_data(self, property_card) -> Optional[Dict]:
         """Extract data from a single property card - robust with text fallback"""
         try:
@@ -458,15 +465,22 @@ class BookingSearcher:
             # Handle popups
             self.handle_popups()
             
-            # Wait for results - on Render Free (0.1 CPU) the cards can take minutes to
-            # appear, and without them the much slower fallback below would run
+            # Wait for results - on Render Free (0.1 CPU) the cards can take minutes to appear.
+            # An error page ends the wait at once: on Render, Booking redirects every search
+            # to its home page with errorc_searchstring_not_found, and no cards would come.
             print("📜 Lade Suchergebnisse...")
             try:
-                WebDriverWait(self.driver, 180).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='property-card']"))
+                state = WebDriverWait(self.driver, 180, poll_frequency=2).until(
+                    lambda d: d.execute_script(self.RESULTS_STATE_JS)
                 )
             except TimeoutException:
+                state = ''
                 print("⚠ Keine Unterkunfts-Karten nach 180s")
+            if state not in ('', 'cards'):
+                errors = ', '.join(sorted(set(re.findall(r'errorc_\w+', state))))
+                print(f"🚫 Booking zeigt eine Fehlerseite statt Ergebnissen ({errors}) - breche ab")
+                print(f"   {state}")
+                return
             time.sleep(3)
             
             # Scroll to load more results - not in LOW_MEMORY mode (Render Free):
