@@ -30,6 +30,10 @@ CARD_SELECTOR = 'div[jsname="mutHjb"]'
 # Render Free has 0.1 CPU - Google Travel needs a while to render the list
 RESULTS_WAIT_SECONDS = 60
 
+# Prices arrive after the list. Read too early on Render, the cards had no price yet
+# and the generic CHF pattern picked up the rating instead (CHF 45 for 4,5 stars).
+PRICES_WAIT_SECONDS = 120
+
 # Reads all cards in ONE WebDriver round trip. Uses semantic anchors (h2 = name,
 # aria-labels for price/rating) instead of Google's obfuscated class names.
 EXTRACT_CARDS_JS = r"""
@@ -61,6 +65,13 @@ return cards.map(c => {
         images: images
     };
 });
+"""
+
+# Cheap check whether any hotel card already shows a price (polled while waiting for prices)
+HAS_PRICES_JS = r"""
+let links = [...document.querySelectorAll(arguments[0] + ' a[aria-label]')];
+if (!links.length) links = [...document.querySelectorAll('a[aria-label]')];
+return links.some(a => /^(Preise ab|Prices? (starting )?from)/i.test(a.getAttribute('aria-label').trim()));
 """
 
 # Cheap check whether the list changed (polled while waiting for the next page)
@@ -225,6 +236,16 @@ class GoogleHotelsSearcher:
         except TimeoutException:
             return False
 
+    def wait_for_prices(self, timeout: int = PRICES_WAIT_SECONDS) -> bool:
+        """Wait until Google loaded the prices into the hotel list"""
+        try:
+            WebDriverWait(self.driver, timeout, poll_frequency=2).until(
+                lambda d: d.execute_script(HAS_PRICES_JS, CARD_SELECTOR)
+            )
+            return True
+        except TimeoutException:
+            return False
+
     def get_date_inputs(self) -> List[str]:
         """Values of the check-in/check-out inputs in the search bar, e.g. 'Fr., 13. Nov.'"""
         return self.driver.execute_script(
@@ -319,7 +340,7 @@ class GoogleHotelsSearcher:
             # the total is only in the hidden text ("CHF 292 Gesamtpreis 2 Übernachtungen")
             price_patterns = [
                 r'(?:Preise ab|Prices? (?:starting )?from)\s*(?:CHF|Fr\.)\s*(\d[\d\'’.,]*)',
-                r'(?:CHF|Fr\.)\s*(\d[\d\'’.,]*)',
+                r'(?:CHF|Fr\.)[^\S\n]*(\d[\d\'’.,]*)',  # same line only - the next line can be the rating
             ]
             for text in labels + [card_text]:
                 match = re.search(price_patterns[0], text, re.IGNORECASE)
@@ -422,6 +443,8 @@ class GoogleHotelsSearcher:
                            'angebote', 'unsere top', 'vergleichen', 'gesponsert', 'sponsored']
 
             for page in range(1, max_pages + 1):
+                if not self.wait_for_prices():
+                    print(f"⚠ Keine Preise nach {PRICES_WAIT_SECONDS}s")
                 cards = self.driver.execute_script(EXTRACT_CARDS_JS, CARD_SELECTOR)
                 print(f"🔍 Seite {page}: {len(cards)} Hotel-Cards gefunden")
 

@@ -524,9 +524,11 @@ class BookingSearcher:
                 if properties:
                     break
             
-            # Fallback: Find divs with typical booking.com content
+            # No cards: log what Booking served instead. (The former fallback took any div
+            # with a price - on Render it turned footer blocks like "Support" into 15 fake
+            # properties, and on a real results page it returned every card several times.)
             if not properties:
-                print("⚠ Standard-Selectors finden nichts! Versuche Fallback...")
+                print("⚠ Standard-Selectors finden nichts!")
                 try:
                     # Save page source for debugging
                     page_source = self.driver.page_source
@@ -534,26 +536,16 @@ class BookingSearcher:
                         f.write(page_source)
                     print("📝 Debug HTML saved to /tmp/booking_debug.html")
 
+                    # /tmp is out of reach on Render - the log shows the start of the page
+                    title, url, body = self.driver.execute_script(
+                        "return [document.title, location.href, document.body ? document.body.innerText.slice(0, 600) : ''];")
+                    print(f"📄 Seite: {title!r} - {url}\n{body}")
+
                     # Check if we're blocked
                     if 'captcha' in page_source.lower() or 'blocked' in page_source.lower():
                         print("🚫 BLOCKED! Booking.com hat uns erkannt!")
-                        return
-
-                    # Try to find ANY divs that look like property cards (have price, name, rating).
-                    # Filtered in the browser: a .text call per div takes hours on Render Free.
-                    properties = self.driver.execute_script("""
-                        return Array.from(document.querySelectorAll('div')).filter(div => {
-                            const text = div.getClientRects().length ? div.innerText : '';
-                            // Property cards typically have: price (CHF), rating number, and reasonable length
-                            return /CHF|EUR|\\$/.test(text) && text.length > 100 && text.length < 1500 && /\\d/.test(text);
-                        }).slice(0, 20);
-                    """)
-
-                    if properties:
-                        print(f"✓ Fallback: {len(properties)} unterkunfts-ähnliche Elemente gefunden\n")
-                    
                 except Exception as e:
-                    print(f"❌ Fallback fehlgeschlagen: {e}")
+                    print(f"❌ Debug-Ausgabe fehlgeschlagen: {e}")
             
             if not properties:
                 print("⚠ Keine Unterkünfte gefunden!")
