@@ -1,24 +1,135 @@
 #!/usr/bin/env python3
 """
 Google Hotels Scraper
-Aggregiert Hotels von ALLEN Plattformen über Google Hotels
+Aggregiert Hotels von ALLEN Plattformen über Google Hotels (google.com/travel)
 """
 
+import base64
 import json
-import time
+import os
 import re
-from datetime import datetime
+import tempfile
+import time
+from datetime import date
 from typing import List, Dict, Optional
 from urllib.parse import quote
 
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 
 from chrome_driver import create_driver
+
+
+BASE_URL = "https://www.google.com"
+
+# Organic result cards - the sponsored carousel at the top is NOT inside these
+CARD_SELECTOR = 'div[jsname="mutHjb"]'
+
+# Render Free has 0.1 CPU - Google Travel needs a while to render the list
+RESULTS_WAIT_SECONDS = 60
+
+# Reads all cards in ONE WebDriver round trip. Uses semantic anchors (h2 = name,
+# aria-labels for price/rating) instead of Google's obfuscated class names.
+EXTRACT_CARDS_JS = r"""
+let cards = [...document.querySelectorAll(arguments[0])];
+if (!cards.length) {
+    // Fallback if Google renames the jsname: largest block around each hotel name
+    cards = [...document.querySelectorAll('h2')].map(h => {
+        let e = h;
+        while (e.parentElement && e.parentElement.querySelectorAll('h2').length === 1) e = e.parentElement;
+        return e;
+    }).filter(e => e.querySelector('a[href*="/travel/"]'));
+}
+const clean = s => (s || '').replace(/ /g, ' ').trim();
+return cards.map(c => {
+    const labels = [...c.querySelectorAll('[aria-label]')].map(e => clean(e.getAttribute('aria-label')));
+    const priceLink = [...c.querySelectorAll('a[aria-label]')]
+        .find(a => /^(Preise ab|Prices? (starting )?from)/i.test(clean(a.getAttribute('aria-label'))));
+    const link = priceLink || c.querySelector('a[href*="/travel/"]');
+    const images = [...c.querySelectorAll('img')]
+        .map(i => i.getAttribute('src') || i.getAttribute('data-src') || '')
+        .filter(src => src.startsWith('http'));
+    const name = c.querySelector('h2');
+    return {
+        name: clean(name ? name.innerText : ''),
+        labels: labels,
+        price_text: clean(priceLink ? priceLink.textContent : ''),
+        text: clean(c.innerText),
+        url: link ? link.href : '',
+        images: images
+    };
+});
+"""
+
+# Cheap check whether the list changed (polled while waiting for the next page)
+CARD_NAMES_JS = r"""
+return [...document.querySelectorAll(arguments[0])].map(c => {
+    const h = c.querySelector('h2');
+    return h ? h.innerText.replace(/ /g, ' ').trim() : '';
+});
+"""
+
+# Month names as Google shows them in the date inputs ("Fr., 13. Nov.", "Fri, Nov 13")
+MONTH_PREFIXES = {
+    1: ('jan',), 2: ('feb',), 3: ('mär', 'mar', 'mrz'), 4: ('apr',),
+    5: ('mai', 'may'), 6: ('jun',), 7: ('jul',), 8: ('aug',),
+    9: ('sep',), 10: ('okt', 'oct'), 11: ('nov',), 12: ('dez', 'dec'),
+}
+
+
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _pb_int(field: int, value: int) -> bytes:
+    return _varint(field << 3) + _varint(value)
+
+
+def _pb_bytes(field: int, payload: bytes) -> bytes:
+    return _varint(field << 3 | 2) + _varint(len(payload)) + payload
+
+
+def _pb_date(field: int, day: date) -> bytes:
+    return _pb_bytes(field, _pb_int(1, day.year) + _pb_int(2, day.month) + _pb_int(3, day.day))
+
+
+def build_ts_param(check_in: date, check_out: date, adults: int, currency: str = 'CHF') -> str:
+    """Encode dates + guests like Google Travel does in its `ts` URL parameter.
+
+    Plain parameters (checkin=, dates=, ibp=htl;dates=...) are ignored by Google.
+    `ts` is a base64 protobuf - decoded from a search where the dates were picked
+    in the UI (2026-10-25):
+      1: 1
+      2: { 1: {1: 3} (one per adult), 2: 0 }                     # travellers
+      3: { 2: { 2: { 1: check-in, 2: check-out, 3: nights },     # stay
+                6: { 1: 1 } } }                                  # rooms
+      5: { 1: { 7: "CHF" } }                                     # currency
+    The place comes from `q`, so the place id (field 3.1) is left out.
+    """
+    nights = (check_out - check_in).days
+    travellers = b''.join(_pb_bytes(1, _pb_int(1, 3)) for _ in range(max(1, adults))) + _pb_int(2, 0)
+    stay = _pb_bytes(2, _pb_date(1, check_in) + _pb_date(2, check_out) + _pb_int(3, nights))
+    stay += _pb_bytes(6, _pb_int(1, 1))
+    ts = (_pb_int(1, 1)
+          + _pb_bytes(2, travellers)
+          + _pb_bytes(3, _pb_bytes(2, stay))
+          + _pb_bytes(5, _pb_bytes(1, _pb_bytes(7, currency.encode()))))
+    return base64.urlsafe_b64encode(ts).decode().rstrip('=')
+
+
+def parse_number(text: str) -> int:
+    """'1.433' / "1'250" / '1,250' -> int"""
+    return int(re.sub(r"[^\d]", "", text))
 
 
 class GoogleHotelsSearcher:
@@ -27,480 +138,378 @@ class GoogleHotelsSearcher:
         if config_path:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
-        
+
         self.driver = None
         self.results = []
-        
+
     def setup_driver(self):
-        """Setup Chrome driver with AGGRESSIVE Railway optimization"""
+        """Setup Chrome driver (shared start in chrome_driver.py)"""
         chrome_options = Options()
-        
+
         if self.config.get('scraping_settings', {}).get('headless', True):
             chrome_options.add_argument('--headless=new')
-        
-        # CRITICAL: Railway/Docker stability options
+
+        # Docker/Render stability options
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--disable-software-rasterizer')
         chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--disable-setuid-sandbox')
-        # No --single-process: unsupported by Chrome, crashes headless=new on navigation
-        chrome_options.add_argument('--no-zygote')  # No zygote for Railway
-        chrome_options.add_argument('--disable-dev-tools')  # Disable DevTools
-        
-        # AGGRESSIVE memory limits
-        chrome_options.add_argument('--js-flags=--max-old-space-size=256')  # Limit JS heap
-        chrome_options.add_argument('--max_old_space_size=256')  # Limit V8 heap
-        chrome_options.add_argument('--memory-pressure-off')  # Disable memory pressure
-        chrome_options.add_argument('--disable-features=IsolateOrigins,site-per-process')  # Less memory
-        
-        # Memory optimization
-        chrome_options.add_argument('--disable-background-networking')
-        chrome_options.add_argument('--disable-default-apps')
-        chrome_options.add_argument('--disable-sync')
-        chrome_options.add_argument('--disable-translate')
-        chrome_options.add_argument('--hide-scrollbars')
-        chrome_options.add_argument('--metrics-recording-only')
-        chrome_options.add_argument('--mute-audio')
-        chrome_options.add_argument('--no-first-run')
-        chrome_options.add_argument('--disable-background-timer-throttling')
-        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-        chrome_options.add_argument('--disable-renderer-backgrounding')
-        chrome_options.add_argument('--disable-hang-monitor')
-        chrome_options.add_argument('--disable-ipc-flooding-protection')
-        chrome_options.add_argument('--disable-prompt-on-repost')
-        chrome_options.add_argument('--disable-client-side-phishing-detection')
-        chrome_options.add_argument('--disable-component-extensions-with-background-pages')
-        
-        # Disable images and CSS for less memory (AGGRESSIVE!)
-        prefs = {
-            "profile.managed_default_content_settings.images": 2,  # Block images
-            "profile.managed_default_content_settings.stylesheets": 2,  # Block CSS
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-        
+        chrome_options.add_argument('--window-size=1280,900')
+        chrome_options.add_argument('--lang=de-CH')
+
+        # Images are not needed - their URLs are still in the HTML
+        chrome_options.add_experimental_option("prefs", {
+            "profile.managed_default_content_settings.images": 2,
+        })
+
         # Anti-detection (keep minimal)
-        chrome_options.add_argument(f"user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        self.driver = create_driver(chrome_options)
-        
-        # Remove webdriver flag
-        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
-        # Smaller window = less memory
-        self.driver.set_window_size(1024, 768)
-        
-    def build_search_url(self) -> str:
-        """Build SIMPLE Google Hotels search URL"""
-        params = self.config['search_parameters']
-        
-        location = params['location']
-        check_in = params['check_in']
-        check_out = params['check_out']
-        guests = params['guests']
-        
-        # SIMPLE Google search for hotels
-        query = f"hotels in {location}"
-        base_url = "https://www.google.com/search"
-        
-        # Simple parameters
-        url = f"{base_url}?q={quote(query)}"
-        url += f"&ibp=htl;dates={check_in.replace('-', '')},{check_out.replace('-', '')}"
-        url += f";guests={guests}"
-        url += "&hl=de"
-        url += "&gl=ch"
-        
-        
-        # 🍳 Meal Plan Filters for Google Hotels
-        meal_plan = params.get('meal_plan', [])
-        if meal_plan:
-            meal_params = []
-            if 'breakfast' in meal_plan:
-                meal_params.append('free_breakfast=true')
-            if 'half_board' in meal_plan or 'full_board' in meal_plan:
-                # Google Hotels doesn't have half/full board as separate filters
-                # Use amenities filter for meals
-                meal_params.append('meals=true')
-            
-            if meal_params:
-                url += '&' + '&'.join(meal_params)
 
-        return url
-        
-        # Add dates
-        url += f"&sa=X"
-        url += f"&ved=0CAAQ5JsGahcKEwjQ"
-        
-        return url
-    
+        self.driver = create_driver(chrome_options)
+
+        # Google serves a reduced result list to "HeadlessChrome" or outdated user agents,
+        # so use the real browser version without the headless marker
+        user_agent = self.driver.execute_script("return navigator.userAgent").replace('HeadlessChrome', 'Chrome')
+        self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            'userAgent': user_agent,
+            'acceptLanguage': 'de-CH,de',
+        })
+
+    def build_search_url(self) -> str:
+        """Build Google Travel hotel search URL with dates and guests"""
+        params = self.config['search_parameters']
+
+        check_in = date.fromisoformat(params['check_in'])
+        check_out = date.fromisoformat(params['check_out'])
+        ts = build_ts_param(check_in, check_out, int(params.get('guests', 2)))
+
+        query = f"hotels in {params['location']}"
+        return f"{BASE_URL}/travel/search?q={quote(query)}&hl=de&gl=ch&curr=CHF&ts={ts}"
+
     def handle_cookie_banner(self):
-        """Handle Google cookie consent"""
-        try:
-            # Wait for cookie banner
-            time.sleep(2)
-            
-            # Try different cookie accept buttons
-            cookie_selectors = [
-                "button[aria-label*='Accept']",
-                "button[aria-label*='Akzeptieren']",
-                "button[aria-label*='Alle akzeptieren']",
-                "//button[contains(text(), 'Accept')]",
-                "//button[contains(text(), 'Akzeptieren')]",
-            ]
-            
-            for selector in cookie_selectors:
+        """Handle Google cookie consent (consent.google.com redirect or dialog)"""
+        # Reject first (no tracking needed), accept only as fallback
+        consent_buttons = [
+            "//button[normalize-space()='Alle ablehnen']",
+            "//button[normalize-space()='Reject all']",
+            "//button[normalize-space()='Alle akzeptieren']",
+            "//button[normalize-space()='Accept all']",
+        ]
+
+        for xpath in consent_buttons:
+            buttons = [b for b in self.driver.find_elements(By.XPATH, xpath) if b.is_displayed()]
+            if buttons:
+                label = buttons[0].text
                 try:
-                    if selector.startswith("//"):
-                        btn = self.driver.find_element(By.XPATH, selector)
-                    else:
-                        btn = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    
-                    btn.click()
-                    print("✓ Cookie-Banner akzeptiert")
-                    time.sleep(1)
-                    return
-                except:
+                    buttons[0].click()
+                except Exception as e:
+                    print(f"⚠ Cookie-Banner Klick fehlgeschlagen: {e}")
                     continue
-                    
+                print(f"✓ Cookie-Banner geschlossen ({label})")
+                time.sleep(2)
+                return
+
+        print("⚠ Kein Cookie-Banner gefunden")
+
+    def wait_for_cards(self, timeout: int = RESULTS_WAIT_SECONDS) -> bool:
+        """Wait until Google rendered the hotel list"""
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                lambda d: d.find_elements(By.CSS_SELECTOR, CARD_SELECTOR)
+                or len(d.find_elements(By.TAG_NAME, 'h2')) > 3
+            )
+            return True
+        except TimeoutException:
+            return False
+
+    def get_date_inputs(self) -> List[str]:
+        """Values of the check-in/check-out inputs in the search bar, e.g. 'Fr., 13. Nov.'"""
+        return self.driver.execute_script(
+            "return [...document.querySelectorAll("
+            "'input[placeholder=\"Check-in\"], input[placeholder=\"Check-out\"]')].map(i => i.value);"
+        )
+
+    @staticmethod
+    def shows_date(value: str, day: date) -> bool:
+        """Does an input value like 'Fr., 13. Nov.' or 'Fri, Nov 13' show this date?"""
+        value = value.lower()
+        days = [int(d) for d in re.findall(r'\b(\d{1,2})\b', value)]
+        return day.day in days and any(m in value for m in MONTH_PREFIXES[day.month])
+
+    def dates_applied(self, check_in: date, check_out: date) -> bool:
+        values = self.get_date_inputs()
+        return (len(values) >= 2
+                and self.shows_date(values[0], check_in)
+                and self.shows_date(values[1], check_out))
+
+    def set_dates_in_ui(self, check_in: date, check_out: date) -> bool:
+        """Fallback if Google ignores `ts`: pick the dates in the date picker.
+
+        The picker's day cells carry data-iso="YYYY-MM-DD" for the next ~12 months.
+        """
+        try:
+            inputs = [i for i in self.driver.find_elements(By.CSS_SELECTOR, "input[placeholder='Check-in']")
+                      if i.is_displayed()]
+            inputs[0].click()
+
+            for day in (check_in, check_out):
+                cell = WebDriverWait(self.driver, 10).until(
+                    lambda d: d.find_element(By.CSS_SELECTOR, f"[data-iso='{day.isoformat()}']")
+                )
+                # JS click also works for months that are not scrolled into view
+                self.driver.execute_script("arguments[0].click();", cell)
+                time.sleep(1)
+
+            done = [b for b in self.driver.find_elements(
+                        By.XPATH, "//button[normalize-space()='Fertig' or normalize-space()='Done']")
+                    if b.is_displayed()]
+            if done:
+                done[0].click()
+
+            time.sleep(3)
+            self.wait_for_cards()
+            return self.dates_applied(check_in, check_out)
         except Exception as e:
-            print("⚠ Kein Cookie-Banner gefunden")
-    
-    def extract_hotel_data(self, hotel_element) -> Optional[Dict]:
-        """Extract hotel data from Google Hotels card"""
+            print(f"⚠ Datum im Kalender setzen fehlgeschlagen: {e}")
+            return False
+
+    def go_to_next_page(self, current_names: List[str]) -> bool:
+        """Click Google's 'Weiter' (next page) button and wait for new cards"""
+        # The image carousels also have 'Weiter' buttons, but only as aria-label without text
+        buttons = [b for b in self.driver.find_elements(
+                       By.XPATH, "//button[normalize-space()='Weiter' or normalize-space()='Next']")
+                   if b.is_displayed()]
+        if not buttons:
+            return False
+
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", buttons[0])
+        buttons[0].click()
+
+        try:
+            WebDriverWait(self.driver, RESULTS_WAIT_SECONDS).until(
+                lambda d: d.execute_script(CARD_NAMES_JS, CARD_SELECTOR)[:3] != current_names[:3]
+            )
+            return True
+        except TimeoutException:
+            return False
+
+    def extract_hotel_data(self, card: Dict) -> Optional[Dict]:
+        """Extract hotel data from the raw Google Hotels card (see EXTRACT_CARDS_JS)"""
         try:
             data = {
-                'name': 'N/A',
+                'name': card['name'] or 'N/A',
                 'location': 'N/A',
                 'price_per_night': 0,
                 'rating': None,
                 'num_reviews': 0,
-                'url': 'N/A',
+                'url': card['url'] or 'N/A',
                 'image_url': 'N/A',
                 'image_urls': [],
                 'distance_km': 0,
                 'source': 'Google Hotels',
             }
-            
-            # Get all text for parsing
-            try:
-                card_text = hotel_element.text
-            except:
-                return None
-            
-            # Name - usually in h2 or h3
-            try:
-                name_selectors = [
-                    "h2",
-                    "h3",
-                    "[role='heading']",
-                    "div[class*='hotel-name']",
-                ]
-                
-                for selector in name_selectors:
-                    try:
-                        name_elem = hotel_element.find_element(By.CSS_SELECTOR, selector)
-                        name_text = name_elem.text.strip()
-                        if name_text and len(name_text) > 3:
-                            data['name'] = name_text
-                            break
-                    except:
-                        continue
-            except:
-                pass
-            
-            # Price - look for CHF or $ with numbers
-            try:
-                price_patterns = [
-                    r'CHF\s*(\d[\d\s\']*)',
-                    r'Fr\.\s*(\d[\d\s\']*)',
-                    r'\$\s*(\d[\d\s,]*)',
-                    r'€\s*(\d[\d\s,]*)',
-                ]
-                
-                for pattern in price_patterns:
-                    price_match = re.search(pattern, card_text.replace('.', '').replace(' ', ''))
-                    if price_match:
-                        price_str = price_match.group(1).replace("'", "").replace(",", "").replace(" ", "")
-                        price = int(price_str)
-                        
-                        # Google usually shows per-night prices
-                        data['price_per_night'] = price
-                        break
-            except:
-                pass
-            
-            # Rating - Google uses 5-star scale
-            try:
-                rating_patterns = [
-                    r'(\d[.,]\d)\s*(?:von|out of|★|/)',
-                    r'(\d[.,]\d)\s*\(',
-                    r'★\s*(\d[.,]\d)',
-                    r'(\d[.,]\d)\s*Sterne',
-                    r'Bewertung[:\s]*(\d[.,]\d)',
-                ]
 
-                for pattern in rating_patterns:
-                    rating_match = re.search(pattern, card_text, re.IGNORECASE)
-                    if rating_match:
-                        rating_str = rating_match.group(1).replace(',', '.')
-                        rating_val = float(rating_str)
-                        if 1.0 <= rating_val <= 5.0:
-                            data['rating'] = rating_val
-                            break
-            except:
-                pass
+            labels = card['labels']
+            card_text = card['text']
 
-            # Reviews count
-            try:
-                review_patterns = [
-                    r'\((\d[\d.,]*)\s*(?:Bewertung|review|Rezension)',
-                    r'(\d[\d.,]*)\s*(?:Bewertung|review|Rezension)',
-                    r'\((\d[\d.,]*)\)',  # Just a number in parentheses
-                ]
+            # Price per night - Google shows the nightly price ("Preise ab CHF 146 für ...");
+            # the total is only in the hidden text ("CHF 292 Gesamtpreis 2 Übernachtungen")
+            price_patterns = [
+                r'(?:Preise ab|Prices? (?:starting )?from)\s*(?:CHF|Fr\.)\s*(\d[\d\'’.,]*)',
+                r'(?:CHF|Fr\.)\s*(\d[\d\'’.,]*)',
+            ]
+            for text in labels + [card_text]:
+                match = re.search(price_patterns[0], text, re.IGNORECASE)
+                if match:
+                    data['price_per_night'] = parse_number(match.group(1))
+                    break
 
-                for pattern in review_patterns:
-                    reviews_match = re.search(pattern, card_text, re.IGNORECASE)
-                    if reviews_match:
-                        reviews_str = reviews_match.group(1).replace('.', '').replace(',', '')
-                        num = int(reviews_str)
-                        if num > 3:  # Avoid matching rating numbers
-                            data['num_reviews'] = num
-                            break
-            except:
-                pass
-            
-            # URL - try to get link
-            try:
-                link_elem = hotel_element.find_element(By.TAG_NAME, "a")
-                href = link_elem.get_attribute('href')
-                if href:
-                    data['url'] = href
-            except:
-                pass
-            
-            # Image
-            try:
-                img_elem = hotel_element.find_element(By.TAG_NAME, "img")
-                img_src = img_elem.get_attribute('src')
-                if img_src and 'http' in img_src:
-                    data['image_url'] = img_src
-                    data['image_urls'] = [img_src]
-            except:
-                pass
-            
+            if not data['price_per_night']:
+                total = re.search(r'(?:CHF|Fr\.)\s*(\d[\d\'’.,]*)\s*(?:Gesamtpreis|total)', card['price_text'], re.IGNORECASE)
+                nights = re.search(r'(\d+)\s*(?:Übernachtung|night)', card['price_text'], re.IGNORECASE)
+                if total and nights and int(nights.group(1)) > 0:
+                    data['price_per_night'] = round(parse_number(total.group(1)) / int(nights.group(1)))
+                else:
+                    match = re.search(price_patterns[1], card_text)
+                    if match:
+                        data['price_per_night'] = parse_number(match.group(1))
+
+            # Rating (0-5) + number of reviews: "4,4 von 5 Sternen aus 1.090 Rezensionen"
+            for label in labels:
+                match = re.search(
+                    r'(\d(?:[.,]\d)?)\s*(?:von|out of)\s*5\b.*?(?:aus|from)\s*(\d[\d\'’.,]*)\s*(?:Rezension|Bewertung|review)',
+                    label, re.IGNORECASE)
+                if match:
+                    rating_val = float(match.group(1).replace(',', '.'))
+                    if 0 < rating_val <= 5.0:
+                        data['rating'] = rating_val
+                        data['num_reviews'] = parse_number(match.group(2))
+                    break
+
+            # Images (first ones of the photo carousel)
+            if card['images']:
+                data['image_url'] = card['images'][0]
+                data['image_urls'] = card['images'][:5]
+
             # Distance (if available)
-            try:
-                distance_patterns = [
-                    r'(\d+[.,]?\d*)\s*km',
-                    r'(\d+[.,]?\d*)\s*Kilometer',
-                ]
-                
-                for pattern in distance_patterns:
-                    dist_match = re.search(pattern, card_text)
-                    if dist_match:
-                        dist_str = dist_match.group(1).replace(',', '.')
-                        data['distance_km'] = float(dist_str)
-                        break
-            except:
-                pass
-            
+            dist_match = re.search(r'(\d+[.,]?\d*)\s*(?:km|Kilometer)\b', card_text)
+            if dist_match:
+                data['distance_km'] = float(dist_match.group(1).replace(',', '.'))
+
+            # Ensure compatibility with app.py HTML report (uses 'title' not 'name')
+            data['title'] = data['name']
+            data['platform'] = 'Google Hotels'
+
             return data
-            
+
         except Exception as e:
             print(f"⚠ Extraction error: {e}")
             return None
-    
+
     def search(self):
         """Perform Google Hotels search"""
         print("🌐 Starte Google Hotels Suche...")
         print("=" * 60)
-        
+
         self.setup_driver()
-        
+
         try:
-            # Build simpler URL
             params = self.config['search_parameters']
-            location = params['location']
-            check_in = params['check_in']
-            check_out = params['check_out']
-            guests = params['guests']
-            
-            # Simple Google search for hotels
-            search_query = f"hotels in {location}"
-            google_url = f"https://www.google.com/search?q={quote(search_query)}&ibp=htl;dates={check_in.replace('-', '')},{check_out.replace('-', '')};guests={guests}"
-            
-            print(f"📍 Suche: {location}")
+            check_in = date.fromisoformat(params['check_in'])
+            check_out = date.fromisoformat(params['check_out'])
+            google_url = self.build_search_url()
+
+            print(f"📍 Suche: {params['location']} ({check_in} - {check_out}, {params.get('guests', 2)} Gäste)")
             print(f"🔗 URL: {google_url}\n")
-            
+
             self.driver.get(google_url)
-            time.sleep(5)
-            
-            # Handle cookie banner
+
+            # Fresh profile → Google redirects to consent.google.com first, then back
             self.handle_cookie_banner()
-            
+
             print("📜 Lade Hotel-Ergebnisse...")
-            time.sleep(3)
-            
-            # Scroll to load results
-            for i in range(3):
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            
-            # Find hotel cards - Google Hotels uses various selectors
-            hotels = []
-            
-            selectors = [
-                "div[class*='hotel']",
-                "div[data-h]",
-                "div[jsname]",
-                "div[class*='card']",
-                "li[class*='hotel']",
-                "div[role='listitem']",
-            ]
-            
-            print("🔍 Suche Google Hotels Cards...")
-            
-            for selector in selectors:
-                try:
-                    found = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    # Filter elements that look like hotel cards (have price + name)
-                    potential_hotels = []
-                    for elem in found:
-                        try:
-                            text = elem.text
-                            if ('CHF' in text or 'Fr.' in text or '$' in text) and len(text) > 100:
-                                potential_hotels.append(elem)
-                        except:
-                            continue
-                    
-                    if len(potential_hotels) > 3:
-                        hotels = potential_hotels
-                        print(f"✓ {len(hotels)} Hotel-Cards gefunden (Selector: {selector})\n")
-                        break
-                except:
-                    continue
-            
-            # Fallback: Get all divs with hotel-like content
-            if not hotels:
-                print("⚠ Kein Standard-Selector funktioniert, versuche Fallback...")
-                try:
-                    all_divs = self.driver.find_elements(By.TAG_NAME, "div")
-                    print(f"📊 Analysiere {len(all_divs)} DIVs...")
-
-                    for div in all_divs:
-                        try:
-                            text = div.text
-                            # Hotel cards have: price + some length
-                            has_price = bool(re.search(r'(?:CHF|Fr\.|€|\$)\s*\d+', text))
-                            has_rating = bool(re.search(r'\d[.,]\d', text))
-                            right_size = 50 < len(text) < 1000
-
-                            if has_price and has_rating and right_size:
-                                hotels.append(div)
-                                if len(hotels) >= 30:
-                                    break
-                        except:
-                            continue
-
-                    if hotels:
-                        print(f"✓ Fallback: {len(hotels)} Hotel-ähnliche Cards gefunden\n")
-                except Exception as e:
-                    print(f"❌ Fallback fehlgeschlagen: {e}")
-            
-            if not hotels:
+            if not self.wait_for_cards():
                 print("⚠ Keine Hotels gefunden!\n")
-                # Save debug HTML
+                debug_path = os.path.join(tempfile.gettempdir(), 'google_hotels_debug.html')
                 try:
-                    with open('/tmp/google_hotels_debug.html', 'w', encoding='utf-8') as f:
+                    with open(debug_path, 'w', encoding='utf-8') as f:
                         f.write(self.driver.page_source)
-                    print("📝 Debug HTML saved to /tmp/google_hotels_debug.html")
-                except:
+                    print(f"📝 Debug HTML saved to {debug_path}")
+                except Exception:
                     pass
                 return
-            
-            # Extract data
+
+            # Check that Google really uses our dates (otherwise prices are for "tomorrow")
+            if self.dates_applied(check_in, check_out):
+                print(f"✓ Reisedaten gesetzt: {' - '.join(self.get_date_inputs()[:2])}")
+            else:
+                print(f"⚠ Google ignoriert Reisedaten ({self.get_date_inputs()[:2]}), setze sie im Kalender...")
+                if not self.set_dates_in_ui(check_in, check_out):
+                    print("❌ Reisedaten konnten nicht gesetzt werden - Preise wären falsch")
+                    return
+                print(f"✓ Reisedaten gesetzt: {' - '.join(self.get_date_inputs()[:2])}")
+
+            # Collect hotels page by page (20 per page)
             all_hotels = []
-            max_results = min(len(hotels), self.config['output'].get('max_results', 50))
-            
-            print(f"📊 Extrahiere Daten von {max_results} Hotels...")
-            for idx, hotel in enumerate(hotels[:max_results], 1):
-                print(f"  [{idx}/{max_results}] ", end='', flush=True)
-                
-                data = self.extract_hotel_data(hotel)
-                
-                if data and data['name'] != "N/A" and data['price_per_night'] > 0:
+            seen_names = set()
+            max_results = self.config['output'].get('max_results', 50)
+            max_pages = self.config['output'].get('max_pages', 3)
+            ad_keywords = ['top 10', 'entdecken', 'geheimtipp', 'günstig', 'buchen sie',
+                           'best deal', 'official site', 'offizielle', 'jetzt buchen',
+                           'angebote', 'unsere top', 'vergleichen', 'gesponsert', 'sponsored']
+
+            for page in range(1, max_pages + 1):
+                cards = self.driver.execute_script(EXTRACT_CARDS_JS, CARD_SELECTOR)
+                print(f"🔍 Seite {page}: {len(cards)} Hotel-Cards gefunden")
+
+                for card in cards:
+                    if len(all_hotels) >= max_results:
+                        break
+
+                    data = self.extract_hotel_data(card)
+
+                    if not data or data['name'] == "N/A" or data['name'] in seen_names:
+                        continue
+                    seen_names.add(data['name'])
+
+                    if data['price_per_night'] <= 0:
+                        print(f"  ❌ {data['name'][:50]} - kein Preis (ausgebucht?)")
+                        continue
+
                     # Filter out Google Ads / sponsored results
                     name_lower = data['name'].lower()
-                    ad_keywords = ['top 10', 'entdecken', 'geheimtipp', 'günstig', 'buchen sie',
-                                   'best deal', 'official site', 'offizielle', 'jetzt buchen',
-                                   'angebote', 'unsere top', 'vergleichen']
                     is_ad = any(kw in name_lower for kw in ad_keywords)
 
                     if is_ad:
-                        print(f"⚠️ Werbung übersprungen: {data['name'][:50]}")
+                        print(f"  ⚠️ Werbung übersprungen: {data['name'][:50]}")
                     else:
                         all_hotels.append(data)
-                        print(f"✓ {data['name'][:50]} - CHF {data['price_per_night']}")
-                else:
-                    print("❌")
-                
-                time.sleep(0.2)
-            
+                        print(f"  ✓ {data['name'][:50]} - CHF {data['price_per_night']}/Nacht - ⭐ {data['rating']}")
+
+                if len(all_hotels) >= max_results or page == max_pages:
+                    break
+                if not self.go_to_next_page([c['name'] for c in cards]):
+                    break
+
             print(f"\n✓ {len(all_hotels)} Hotels extrahiert")
-            
+
             # Apply filters
             self.results = self.filter_hotels(all_hotels)
-            
+
             print(f"\n✅ {len(self.results)} passende Hotels!")
-            
+
         except Exception as e:
             print(f"\n❌ Fehler: {e}")
             import traceback
             traceback.print_exc()
-            
+
         finally:
             if self.driver:
                 self.driver.quit()
-    
+
     def filter_hotels(self, hotels: List[Dict]) -> List[Dict]:
         """Apply filters to hotel results"""
         filtered = []
         filters = self.config.get('filters', {})
-        
+
+        # Frontend sends the hotel rating on the 10-point scale (like Booking),
+        # Google rates 0-5 → compare on Google's scale
+        min_rating = filters.get('min_rating_hotels', filters.get('min_rating', 0))
+        if min_rating > 5:
+            min_rating = min_rating / 2
+
         for hotel in hotels:
             # Price filter
             max_price = filters.get('max_price', filters.get('max_price_per_night_chf', 999999))
             if hotel['price_per_night'] > max_price:
                 continue
-            
-            # Rating filter (Google Hotels uses 10-point scale same as Booking)
-            min_rating = filters.get('min_rating_hotels', filters.get('min_rating', 0))
+
+            # Rating filter
             if hotel['rating'] and hotel['rating'] < min_rating:
                 continue
-            
+
             # Reviews filter
             min_reviews = filters.get('min_reviews', filters.get('min_number_of_reviews', 0))
             if hotel['num_reviews'] < min_reviews:
                 continue
-            
+
             filtered.append(hotel)
-        
+
         return filtered
 
 
 def main():
     """Test Google Hotels scraper"""
     import sys
-    
+
     config_file = sys.argv[1] if len(sys.argv) > 1 else "config.json"
-    
+
     searcher = GoogleHotelsSearcher(config_file)
     searcher.search()
-    
+
     print(f"\n📊 RESULTS: {len(searcher.results)} hotels")
     for i, hotel in enumerate(searcher.results[:5], 1):
         print(f"{i}. {hotel['name']} - CHF {hotel['price_per_night']}/night - ⭐ {hotel['rating']}")
