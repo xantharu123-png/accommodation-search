@@ -185,32 +185,82 @@ class AirbnbSearcher:
             print(f"⚠ Cookie-Banner Fehler: {e}")
             return False
     
-    def extract_listing_data(self, listing_element) -> Optional[Dict]:
-        """Extract data from a single listing element"""
+    CARD_SELECTOR = "[itemprop='itemListElement']"
+    TITLE_SELECTOR = "[data-testid='listing-card-title']"
+    SUBTITLE_SELECTOR = "[data-testid='listing-card-subtitle']"
+    PRICE_SELECTORS = [
+        "span._tyxjp1",
+        "span[class*='price']",
+        "div[class*='price'] span",
+        "span._1y74zjx"
+    ]
+    RATING_SELECTORS = [
+        "span.r4a59j5",
+        "span[class*='rating']",
+        "div[aria-label*='Rating']",
+    ]
+    REVIEW_SELECTORS = [
+        "span.s1cjsi4j",
+        "span[class*='review']",
+    ]
+
+    # Reads all result cards of a page in ONE WebDriver round trip. On Render Free (0.1 CPU)
+    # each round trip takes seconds, and the former ~12 find_element/.text calls per card
+    # kept a search busy for many minutes per page.
+    # Like Selenium's .text, unrendered elements give '' and non-breaking spaces become spaces.
+    CARDS_SNAPSHOT_JS = """
+        const [cardSelector, selectors] = arguments;
+        const text = el => el.getClientRects().length ? (el.innerText || '').replace(/\\u00a0/g, ' ').trim() : '';
+        return Array.from(document.querySelectorAll(cardSelector)).map(card => {
+            const first = {};
+            for (const sel of selectors) {
+                const el = card.querySelector(sel);
+                if (el) first[sel] = text(el);
+            }
+            const link = card.querySelector("a[href*='/rooms/']");
+            const img = card.querySelector("img[data-original-uri], img[src*='jpg']");
+            // Like the former XPath .//span[contains(text(), 'Superhost')]: first text node of a span
+            const superhost = Array.from(card.querySelectorAll('span')).some(span => {
+                const node = Array.from(span.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+                return !!node && node.textContent.includes('Superhost');
+            });
+            return {
+                text: text(card),
+                first: first,
+                url: link ? link.href : null,
+                image: img ? (img.src || img.getAttribute('data-original-uri')) : null,
+                superhost: superhost,
+            };
+        });
+    """
+
+    def read_cards(self) -> List[Dict]:
+        """Snapshot of all result cards on the current page (see CARDS_SNAPSHOT_JS)"""
+        selectors = ([self.TITLE_SELECTOR, self.SUBTITLE_SELECTOR]
+                     + self.PRICE_SELECTORS + self.RATING_SELECTORS + self.REVIEW_SELECTORS)
+        return self.driver.execute_script(self.CARDS_SNAPSHOT_JS, self.CARD_SELECTOR, selectors)
+
+    def extract_listing_data(self, card: Dict) -> Optional[Dict]:
+        """Extract data from a single result card (an entry of read_cards())"""
         try:
             data = {}
-            
+            first = card['first']
+
             # Title
-            try:
-                title = listing_element.find_element(By.CSS_SELECTOR, "[data-testid='listing-card-title']").text
-                data['title'] = title
-            except:
-                data['title'] = "N/A"
-            
+            data['title'] = first.get(self.TITLE_SELECTOR, "N/A")
+
             # Subtitle (location details)
-            try:
-                subtitle = listing_element.find_element(By.CSS_SELECTOR, "[data-testid='listing-card-subtitle']").text
+            if self.SUBTITLE_SELECTOR in first:
+                subtitle = first[self.SUBTITLE_SELECTOR]
                 data['subtitle'] = subtitle
                 data['location'] = subtitle  # Also store as 'location' for consistency
-                
-                # Distance will be calculated by Google Maps later
-                # For now, just set to 0 (unknown)
-                data['distance_km'] = 0
-                
-            except:
+            else:
                 data['subtitle'] = "N/A"
                 data['location'] = "N/A"
-                data['distance_km'] = 0
+
+            # Distance will be calculated by Google Maps later
+            # For now, just set to 0 (unknown)
+            data['distance_km'] = 0
             
             # Price - try multiple selectors
             data['price_per_night'] = None
@@ -218,7 +268,7 @@ class AirbnbSearcher:
                 # Airbnb.ch shows "Fr. 330 Gesamtpreis" (total for the stay) or "CHF 150 / Nacht".
                 # Discounted listings show the old price first ("Fr. 467\nFr. 330 Gesamtpreis"),
                 # so labelled prices are checked before the generic patterns.
-                all_text = listing_element.text.replace("'", "").replace("’", "")
+                all_text = card['text'].replace("'", "").replace("’", "")
                 currency = r'(?:CHF|Fr\.)'
                 amount = r'(\d[\d ]*\d|\d)'
 
@@ -247,23 +297,14 @@ class AirbnbSearcher:
                 
                 # If still not found, try specific CSS selectors
                 if data['price_per_night'] is None:
-                    price_selectors = [
-                        "span._tyxjp1",
-                        "span[class*='price']",
-                        "div[class*='price'] span",
-                        "span._1y74zjx"
-                    ]
-                    for selector in price_selectors:
-                        try:
-                            price_element = listing_element.find_element(By.CSS_SELECTOR, selector)
-                            price_text = price_element.text
-                            price_match = re.search(r'(\d[\d\'\s]*\d|\d+)', price_text.replace("'", ""))
-                            if price_match:
-                                price_str = price_match.group(1).replace("'", "").replace(" ", "")
-                                data['price_per_night'] = int(price_str)
-                                break
-                        except:
+                    for selector in self.PRICE_SELECTORS:
+                        if selector not in first:
                             continue
+                        price_match = re.search(r'(\d[\d\'\s]*\d|\d+)', first[selector].replace("'", ""))
+                        if price_match:
+                            price_str = price_match.group(1).replace("'", "").replace(" ", "")
+                            data['price_per_night'] = int(price_str)
+                            break
             except Exception as e:
                 print(f"\n⚠ Preis-Extraktion Fehler: {e}")
                 data['price_per_night'] = None
@@ -274,7 +315,7 @@ class AirbnbSearcher:
             
             try:
                 # Method 1: Look for rating pattern in all text
-                all_text = listing_element.text
+                all_text = card['text']
                 
                 # Find rating (format: "4.95" or "4,95")
                 rating_patterns = [
@@ -304,69 +345,77 @@ class AirbnbSearcher:
                 
                 # Method 2: Try CSS selectors as fallback
                 if data['rating'] is None:
-                    rating_selectors = [
-                        "span.r4a59j5",
-                        "span[class*='rating']",
-                        "div[aria-label*='Rating']",
-                    ]
-                    for selector in rating_selectors:
-                        try:
-                            elem = listing_element.find_element(By.CSS_SELECTOR, selector)
-                            rating_match = re.search(r'(\d\.\d{1,2})', elem.text)
-                            if rating_match:
-                                data['rating'] = float(rating_match.group(1))
-                                break
-                        except:
-                            continue
-                
+                    for selector in self.RATING_SELECTORS:
+                        rating_match = re.search(r'(\d\.\d{1,2})', first.get(selector, ''))
+                        if rating_match:
+                            data['rating'] = float(rating_match.group(1))
+                            break
+
                 if data['num_reviews'] == 0:
-                    review_selectors = [
-                        "span.s1cjsi4j",
-                        "span[class*='review']",
-                    ]
-                    for selector in review_selectors:
-                        try:
-                            elem = listing_element.find_element(By.CSS_SELECTOR, selector)
-                            reviews_match = re.search(r'(\d+)', elem.text)
-                            if reviews_match:
-                                data['num_reviews'] = int(reviews_match.group(1))
-                                break
-                        except:
-                            continue
-                            
+                    for selector in self.REVIEW_SELECTORS:
+                        reviews_match = re.search(r'(\d+)', first.get(selector, ''))
+                        if reviews_match:
+                            data['num_reviews'] = int(reviews_match.group(1))
+                            break
+
             except Exception as e:
                 pass  # Keep defaults
-            
+
             # Superhost badge
-            try:
-                listing_element.find_element(By.XPATH, ".//span[contains(text(), 'Superhost')]")
-                data['is_superhost'] = True
-            except:
-                data['is_superhost'] = False
-            
+            data['is_superhost'] = card['superhost']
+
             # URL
-            try:
-                link = listing_element.find_element(By.CSS_SELECTOR, "a[href*='/rooms/']")
-                data['url'] = link.get_attribute('href')
-            except:
-                data['url'] = None
-            
+            data['url'] = card['url']
+
             # Image URL (main image)
-            try:
-                img = listing_element.find_element(By.CSS_SELECTOR, "img[data-original-uri], img[src*='jpg']")
-                img_url = img.get_attribute('src') or img.get_attribute('data-original-uri')
-                data['image_url'] = img_url
-                data['image_urls'] = [img_url] if img_url else []
-            except:
-                data['image_url'] = None
-                data['image_urls'] = []
-            
+            data['image_url'] = card['image']
+            data['image_urls'] = [card['image']] if card['image'] else []
+
             return data
             
         except Exception as e:
             print(f"⚠ Fehler beim Extrahieren der Listing-Daten: {e}")
             return None
     
+    DETAIL_IMAGE_SELECTORS = [
+        "img[src*='pictures']",  # Main gallery images
+        "img[data-original-uri*='pictures']",  # Lazy loaded
+        "div[data-section-id='HERO_DEFAULT'] img",  # Hero section
+        "picture img",  # Picture elements
+    ]
+
+    # Reads everything get_listing_details needs in ONE async script (formerly ~15 round
+    # trips per listing, minutes each on Render Free). Same steps as before: images first,
+    # scroll to the middle so the reviews load, then open "Alle Ausstattungsmerkmale".
+    DETAIL_SNAPSHOT_JS = """
+        const [imageSelectors, done] = arguments;
+        const text = el => el.getClientRects().length ? (el.innerText || '').replace(/\\u00a0/g, ' ').trim() : '';
+        const textOf = sel => { const el = document.querySelector(sel); return el ? text(el) : null; };
+        // Like the former XPath contains(text(), ...): first text node of the element
+        const ownText = el => { const n = Array.from(el.childNodes).find(c => c.nodeType === Node.TEXT_NODE); return n ? n.textContent : ''; };
+
+        const images = imageSelectors.map(sel => Array.from(document.querySelectorAll(sel)).slice(0, 30)
+            .map(img => img.src || img.getAttribute('data-original-uri')));
+        window.scrollTo(0, document.body.scrollHeight / 2);
+        setTimeout(() => {
+            const snapshot = {
+                images: images,
+                reviews: Array.from(document.querySelectorAll('[data-review-id], .r1bctolv')).slice(0, 30).map(el => el.innerText),
+                description: textOf("[data-section-id='DESCRIPTION_DEFAULT']"),
+                header: textOf("div[data-section-id='TITLE_DEFAULT']"),
+                body: text(document.body),
+            };
+            const finish = () => {
+                const section = document.querySelector("[data-section-id='AMENITIES_DEFAULT']");
+                snapshot.amenities = section ? section.innerText : '';
+                done(snapshot);
+            };
+            const showAll = Array.from(document.querySelectorAll('button'))
+                .find(b => ownText(b).includes('Alle') && ownText(b).includes('Ausstattung'));
+            if (showAll) { showAll.click(); setTimeout(finish, 2000); } else { finish(); }
+        }, 1000);
+    """
+
     def get_listing_details(self, url: str) -> Dict:
         """Get detailed information from listing page including amenities"""
         details = {
@@ -385,39 +434,25 @@ class AirbnbSearcher:
             # and a second tab doubles Chrome's memory/CPU load (Render Free: 0.1 CPU)
             self.driver.get(url)
 
-            # Wait for the title section (client-rendered, slow on low CPU)
+            # Wait for the title section (client-rendered, slow on low CPU - poll
+            # rarely so the waiting doesn't take CPU away from rendering)
             try:
-                WebDriverWait(self.driver, 30).until(
+                WebDriverWait(self.driver, 30, poll_frequency=2).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "[data-section-id='TITLE_DEFAULT']"))
                 )
             except TimeoutException:
                 pass
 
-            time.sleep(self.config['scraping_settings']['wait_time_seconds'])
+            # Wait a bit more for gallery to load
+            time.sleep(self.config['scraping_settings']['wait_time_seconds'] + 1)
+
+            snap = self.driver.execute_async_script(self.DETAIL_SNAPSHOT_JS, self.DETAIL_IMAGE_SELECTORS)
 
             # 📸 Get image gallery (5-20 images)
             try:
-                # Wait a bit more for gallery to load
-                time.sleep(1)
-
-                # Find all images in the gallery - try multiple selectors!
-                image_selectors = [
-                    "img[src*='pictures']",  # Main gallery images
-                    "img[data-original-uri*='pictures']",  # Lazy loaded
-                    "div[data-section-id='HERO_DEFAULT'] img",  # Hero section
-                    "picture img",  # Picture elements
-                ]
-
                 image_urls = []
-                for selector in image_selectors:
+                for candidate_urls in snap['images']:  # one list per selector, in order
                     try:
-                        # One round trip per selector instead of two per image
-                        candidate_urls = self.driver.execute_script(
-                            "return Array.from(document.querySelectorAll(arguments[0])).slice(0, 30)"
-                            ".map(img => img.src || img.getAttribute('data-original-uri'));",
-                            selector
-                        )
-
                         for img_url in candidate_urls:  # Check more images
                             # FILTER OUT property type icons and platform assets
                             if img_url and 'pictures' in img_url:
@@ -456,20 +491,10 @@ class AirbnbSearcher:
             except Exception as e:
                 pass
             
-            # 💬 Get reviews (last 30)
+            # 💬 Get reviews (last 30) - read after scrolling to the reviews section
             try:
-                # Scroll to reviews section
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-                time.sleep(1)
-                
-                # Find review elements (texts in one round trip)
-                review_texts = self.driver.execute_script(
-                    "return Array.from(document.querySelectorAll('[data-review-id], .r1bctolv'))"
-                    ".slice(0, 30).map(el => el.innerText);"
-                )
-
                 reviews = []
-                for review_text in review_texts:  # Max 30 reviews
+                for review_text in snap['reviews']:  # Max 30 reviews
                     if review_text and len(review_text) > 20:  # Filter short reviews
                         reviews.append(review_text)
                 
@@ -480,20 +505,16 @@ class AirbnbSearcher:
                 pass
             
             # Get description
-            try:
-                description = self.driver.find_element(By.CSS_SELECTOR, "[data-section-id='DESCRIPTION_DEFAULT']").text
-                details['description'] = description
-            except:
-                pass
-            
+            if snap['description'] is not None:
+                details['description'] = snap['description']
+
             # 🛏️ Extract bedrooms and guests from listing details
             try:
                 # Method 1: Look in the title/header area (most reliable!)
-                try:
+                header_text = snap['header']
+                if header_text is not None:
                     # Airbnb shows "2 guests · 1 bedroom · 1 bed · 1 bath" near title
-                    header_info = self.driver.find_element(By.CSS_SELECTOR, "div[data-section-id='TITLE_DEFAULT']")
-                    header_text = header_info.text
-                    
+
                     # Extract guests
                     guest_match = re.search(r'(\d+)\s*(?:guest|Gast|Gäste)', header_text, re.IGNORECASE)
                     if guest_match:
@@ -505,15 +526,15 @@ class AirbnbSearcher:
                         details['bedrooms'] = int(bedroom_match.group(1))
                     elif 'Studio' in header_text or 'studio' in header_text:
                         details['bedrooms'] = 0
-                except:
-                    pass
-                
-                # Method 2: Look for "X bedrooms · Y guests" pattern in full page text
+
+                # Method 2: Look for "X bedrooms · Y guests" pattern in full page text.
+                # Number and word on the same line, at most 2 digits: the page text also holds
+                # the hidden booking calendar, and "Dezember 2026\nGäste" gave 2026 guests.
                 if 'bedrooms' not in details or 'max_guests' not in details:
-                    page_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    
+                    page_text = snap['body']
+
                     if 'bedrooms' not in details:
-                        bedroom_match = re.search(r'(\d+)\s*(?:bedroom|Schlafzimmer)', page_text, re.IGNORECASE)
+                        bedroom_match = re.search(r'\b(\d{1,2})[^\S\n]*(?:bedroom|Schlafzimmer)', page_text, re.IGNORECASE)
                         if bedroom_match:
                             details['bedrooms'] = int(bedroom_match.group(1))
                         elif 'Studio' in page_text or 'studio' in page_text:
@@ -521,8 +542,8 @@ class AirbnbSearcher:
                     
                     if 'max_guests' not in details:
                         guest_patterns = [
-                            r'(\d+)\s*(?:guest|Gast|Gäste)',
-                            r'(?:guest|Gast|Gäste).*?(\d+)',
+                            r'\b(\d{1,2})[^\S\n]*(?:guest|Gast|Gäste)',
+                            r'(?:guest|Gast|Gäste).*?\b(\d{1,2})\b',
                         ]
                         for pattern in guest_patterns:
                             guest_match = re.search(pattern, page_text, re.IGNORECASE)
@@ -538,23 +559,9 @@ class AirbnbSearcher:
                 print(f"⚠ Fehler beim Extrahieren von Zimmer/Gäste-Info: {e}")
                 pass
             
-            # Get amenities
+            # Get amenities (section text, read after "Alle Ausstattungsmerkmale anzeigen")
             try:
-                # Click "Alle Ausstattungsmerkmale anzeigen" button if exists
-                show_all_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Alle') and contains(text(), 'Ausstattung')]")
-                show_all_btn.click()
-                time.sleep(2)
-            except:
-                pass
-            
-            # Extract all amenity text
-            try:
-                # Whole section text in one round trip - reading every nested div
-                # separately took minutes per listing on Render Free
-                amenities_text = self.driver.execute_script(
-                    "const s = document.querySelector(\"[data-section-id='AMENITIES_DEFAULT']\");"
-                    "return s ? s.innerText : '';"
-                ).lower()
+                amenities_text = snap['amenities'].lower()
                 details['amenities'] = amenities_text
                 
                 # Check for specific amenities
@@ -613,8 +620,8 @@ class AirbnbSearcher:
 
         return details
     
-    def filter_results(self, listing: Dict, debug: bool = False) -> tuple[bool, str]:
-        """Apply filters to a listing"""
+    def filter_results(self, listing: Dict, debug: bool = False, check_amenities: bool = True) -> tuple[bool, str]:
+        """Apply filters to a listing (amenities only once the detail page is loaded)"""
         filters = self.config['filters']
         amenities = filters.get('amenities', self.config.get('amenities', {}))
         params = self.config['search_parameters']
@@ -668,22 +675,22 @@ class AirbnbSearcher:
                 return False, "Kein Superhost"
             return False, "superhost"
         
-        # Amenity filters (if required)
-        if amenities.get('private_pool', {}).get('required', False) and not listing.get('has_private_pool', False):
-            return False, "pool"
-        
-        if amenities.get('private_whirlpool', {}).get('required', False) and not listing.get('has_private_whirlpool', False):
-            return False, "whirlpool"
-        
-        if amenities.get('private_sauna', {}).get('required', False) and not listing.get('has_private_sauna', False):
-            return False, "sauna"
-        
-        if amenities.get('fireplace', {}).get('required', False) and not listing.get('has_fireplace', False):
-            return False, "fireplace"
-        
-        if amenities.get('parking', {}).get('required', False) and not listing.get('has_parking', False):
-            return False, "parking"
-        
+        # Amenity filters (if required). Airbnb already filters required amenities in the
+        # search URL. The detail page check only works with search_terms in the config -
+        # the web app sends none, and without them every listing was rejected.
+        amenity_checks = [
+            ('private_pool', 'has_private_pool', "pool"),
+            ('private_whirlpool', 'has_private_whirlpool', "whirlpool"),
+            ('private_sauna', 'has_private_sauna', "sauna"),
+            ('fireplace', 'has_fireplace', "fireplace"),
+            ('parking', 'has_parking', "parking"),
+        ]
+        for key, flag, reason in amenity_checks if check_amenities else []:
+            amenity = amenities.get(key, {})
+            if (isinstance(amenity, dict) and amenity.get('required', False) and amenity.get('search_terms')
+                    and not listing.get(flag, False)):
+                return False, reason
+
         return True, "passed"
     
     def search(self):
@@ -738,17 +745,16 @@ class AirbnbSearcher:
                         self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                         time.sleep(1)
                     
-                    # Find all listings on current page
-                    listings = self.driver.find_elements(By.CSS_SELECTOR, "[itemprop='itemListElement']")
-                    print(f"  ✓ {len(listings)} Listings gefunden")
-                    
-                    # IMPORTANT: Extract data IMMEDIATELY before elements become stale
-                    print(f"  🔍 Extrahiere Daten von {len(listings)} Listings...")
+                    # Read all listings on current page (one round trip, before they become stale)
+                    cards = self.read_cards()
+                    print(f"  ✓ {len(cards)} Listings gefunden")
+
+                    print(f"  🔍 Extrahiere Daten von {len(cards)} Listings...")
                     page_results = []
-                    
-                    for listing in listings:
+
+                    for card in cards:
                         try:
-                            data = self.extract_listing_data(listing)
+                            data = self.extract_listing_data(card)
                             if data and data.get('url'):
                                 # Convert total price to per night if needed
                                 if data['price_per_night'] and num_nights > 0:
@@ -868,8 +874,8 @@ class AirbnbSearcher:
                 else:
                     print(f"  [{idx}/{min(len(all_listings), self.config['output']['max_results'])}] ", end='')
                 
-                # Apply basic filters first
-                passed, reason = self.filter_results(data, debug=True)
+                # Apply basic filters first (amenities are only known after the detail page)
+                passed, reason = self.filter_results(data, debug=True, check_amenities=False)
                 if not passed:
                     print(f"❌ {reason}")
                     filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
