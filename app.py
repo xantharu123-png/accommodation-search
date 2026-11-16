@@ -89,6 +89,7 @@ class SearchParams(BaseModel):
     property_type: str = "any"  # any, entire_home, private_room, hotel_room
     platforms: List[str] = ["airbnb", "booking", "google_hotels"]
     amenities: Optional[dict] = None  # Optional amenities filter
+    meal_plan: List[str] = []  # breakfast, half_board, full_board (Booking.com only)
 
 
 class SearchResponse(BaseModel):
@@ -159,7 +160,8 @@ def run_search(search_id: str, params: SearchParams):
                 "guests": params.guests,
                 "min_bedrooms": params.min_bedrooms,
                 "search_radius_km": params.search_radius_km,
-                "property_type": params.property_type
+                "property_type": params.property_type,
+                "meal_plan": params.meal_plan
             },
             "filters": {
                 "max_price_per_night_chf": params.max_price,

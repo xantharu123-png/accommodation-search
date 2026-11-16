@@ -10,6 +10,7 @@ import time
 import re
 from datetime import datetime
 from typing import List, Dict, Optional
+from urllib.parse import quote
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -84,28 +85,31 @@ class BookingSearcher:
             max_price = filters['max_price']
             url += f"&price=CHF-0-CHF-{max_price}"
         
+        # Booking's sidebar filters all go into ONE nflt parameter ("a=1;b=2")
+        nflt = []
+
         # 🏠 Property Type Filter - MAPPED from user selection!
         property_type = params.get('property_type', 'any')
-        
+
         if property_type == 'house':
             # Haus → Ferienhäuser (214) + Chalets (220)
-            url += "&nflt=ht_id%3D214%3Bht_id%3D220"
+            nflt += ['ht_id=214', 'ht_id=220']
         elif property_type == 'apartment':
             # Wohnung → Ferienwohnungen (201)
-            url += "&nflt=ht_id%3D201"
+            nflt += ['ht_id=201']
         elif property_type == 'guesthouse':
             # Gästehaus → Bed & Breakfasts (208) + Pensionen (203)
-            url += "&nflt=ht_id%3D208%3Bht_id%3D203"
+            nflt += ['ht_id=208', 'ht_id=203']
         elif property_type == 'hotel':
             # Hotel → Hotels (204)
-            url += "&nflt=ht_id%3D204"
+            nflt += ['ht_id=204']
         elif property_type == 'private_room':
             # Private room → all types (no specific filter on Booking)
             pass
         else:
             # 'any' → Alle Ferienunterkünfte (Apartments, Homes, Chalets)
-            url += "&nflt=ht_id%3D201%3Bht_id%3D214%3Bht_id%3D220"
-        
+            nflt += ['ht_id=201', 'ht_id=214', 'ht_id=220']
+
         # Rating filter (Booking uses 1-10 scale)
         min_rating = filters.get('min_rating', 0)
         if min_rating > 0:
@@ -114,19 +118,18 @@ class BookingSearcher:
             url += f"&review_score={booking_min_rating}"
         
         
-        # 🍳 Meal Plan Filters
+        # 🍳 Meal Plan Filters - values as in Booking's "Verpflegung" filter
+        # (999 there is self-catering, not breakfast)
         meal_plan = params.get('meal_plan', [])
-        if meal_plan:
-            meal_filters = []
-            if 'breakfast' in meal_plan:
-                meal_filters.append('mealplan=999')  # Breakfast included
-            if 'half_board' in meal_plan:
-                meal_filters.append('mealplan=2')   # Half board
-            if 'full_board' in meal_plan:
-                meal_filters.append('mealplan=3')   # Full board
-            
-            if meal_filters:
-                url += '&' + '&'.join(meal_filters)
+        if 'breakfast' in meal_plan:
+            nflt += ['mealplan=1']  # Frühstück inbegriffen
+        if 'half_board' in meal_plan:
+            nflt += ['mealplan=9']  # Frühstück & Abendessen inbegriffen
+        if 'full_board' in meal_plan:
+            nflt += ['mealplan=3', 'mealplan=4']  # Alle Mahlzeiten inbegriffen, All-Inclusive
+
+        if nflt:
+            url += '&nflt=' + quote(';'.join(nflt))
 
         return url
     

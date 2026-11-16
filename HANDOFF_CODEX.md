@@ -240,11 +240,15 @@ Die ursprünglichen Ursachen des Render-Hängers waren:
 
 ## 8. Bekannte Bugs und offene Punkte (verifiziert im Code, priorisiert)
 
-1. **Verpflegungsfilter wirkungslos.**
-   - `index.html:856` schickt `meal_plan`, aber `SearchParams` (`app.py:73`) hat kein solches Feld. Pydantic verwirft unbekannte Felder still, und `run_search` schreibt es nicht in `search_parameters`.
-   - `booking_searcher.py:118` liest `params.get('meal_plan')` und bekommt deshalb nie etwas.
-   - Fix: Feld `meal_plan: List[str] = []` ergänzen und in `config["search_parameters"]` übernehmen.
-   - Prüfen, ob die Booking-Parameter (`mealplan=999/2/3`) noch stimmen. Google Hotels ignoriert die Verpflegung (die UI behauptet „Booking & Google Hotels“).
+1. ~~**Verpflegungsfilter wirkungslos.**~~ **Erledigt am 16.11.2026.**
+   - `SearchParams` hat jetzt `meal_plan`, und `run_search` reicht es in `search_parameters` durch.
+   - Booking bekommt die Werte aus seinem eigenen „Mahlzeiten“-Filter (ausgelesen von echten Suchseiten), zusammen mit dem Unterkunftstyp in **einem** `nflt`-Parameter:
+     - Frühstück → `mealplan=1`;
+     - Halbpension → `mealplan=9`;
+     - Vollpension → `mealplan=3` und `mealplan=4` (All-Inclusive).
+   - Weitere Codes: `999` ist Selbstverpflegung (der alte Code nutzte es fälschlich für Frühstück), `8` ist Frühstück und Mittagessen.
+   - Die UI sagt jetzt „nur Booking.com“; Google Hotels filtert nicht nach Verpflegung.
+   - Auf Render wirkt der Filter nicht, weil Booking dort blockiert ist (8.14).
 2. **Airbnb zu langsam auf Render (rund 45 min).** `extract_listing_data` bündeln, analog zu `CARD_SNAPSHOT_JS`. Danach Detailseiten-Timeouts und -Anzahl in `LOW_MEMORY` überdenken. Vorher und nachher die WebDriver-Calls zählen (Methode: siehe 9.4).
 3. **Report-HTML unescaped** (`app.py:286–437`). Titel, Ort und URLs werden roh ins HTML geschrieben. `SEARCH_LOCATION` steht unescaped in einem JS-String-Literal (`app.py:390`); ein `'` im Ortsnamen bricht das Script, und es ist eine XSS-Lücke. `html.escape` bzw. `json.dumps` verwenden.
 4. **Favoriten auf Render nicht persistent** (SQLite im flüchtigen Container). Für eine Lösung braucht es eine Entscheidung von Miroslav, z. B. eine externe DB oder Render Disk (kostenpflichtig).
@@ -383,7 +387,7 @@ Abgesehen von den Vercel-Checks auf GitHub gibt es nichts. Prüfung bisher: loka
 
 ## 13. Vorgeschlagene nächste Schritte für Codex (in dieser Reihenfolge, jeweils lokal testen, dann vor dem Push fragen)
 
-1. Verpflegungsfilter durchreichen (8.1). Klein und klar.
+1. ~~Verpflegungsfilter durchreichen (8.1).~~ Erledigt.
 2. Doppelte Route entfernen und Report-HTML escapen (8.5, 8.3).
 3. Airbnb-Extraktion bündeln (8.2), mit Call-Zählung vorher und nachher. Danach **ein** Live-Test auf Render nur mit Airbnb, nach Absprache.
 4. Getrackte Junk-Dateien aus dem Index nehmen und `.gitignore`/`.dockerignore` um `.venv` ergänzen (8.6).
