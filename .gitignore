@@ -6,3 +6,7 @@ __pycache__/
 *.pyc
 favorites.db
 results/
+
+# Local virtual environments
+.venv/
+venv/

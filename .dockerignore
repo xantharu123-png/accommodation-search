@@ -6,3 +6,5 @@ results
 favorites.db
 *.bat
 PROJECT_SUMMARY.md
+.venv
+venv

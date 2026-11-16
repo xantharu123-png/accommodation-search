@@ -19,7 +19,7 @@ if errorlevel 1 (
 
 :: Installiere Dependencies falls nötig
 echo Pruefe Dependencies...
-pip install fastapi uvicorn[standard] pydantic selenium pandas requests python-multipart aiofiles --quiet 2>nul
+python -m pip install -r requirements.txt --quiet
 
 echo.
 echo Server startet auf: http://localhost:8000
