@@ -1,8 +1,8 @@
 # Übergabe an Codex – Accommodation Search
 
-Stand: 11.11.2026 · Branch `main` · HEAD `63d477e` (lokal = `origin/main`, Arbeitsbaum sauber bis auf die untracked Dateien `PROJECT_SUMMARY.md` und diese Datei)
+Stand: 11.11.2026, Nachträge vom 16.11.2026 (Abschnitte 8 und 13; erledigte Punkte sind durchgestrichen) · Branch `main` · den aktuellen HEAD liefert `git log -1`
 
-Dieses Dokument fasst alles zusammen, was in den bisherigen Sessions (mit Claude Code, 25.–28.10.2026) herausgefunden, geändert, gemessen und entschieden wurde. Lies es ganz, bevor du etwas änderst. Die Abschnitte 11 (Spielregeln) und 10 (Lessons learned) sind verbindlich.
+Dieses Dokument fasst alles zusammen, was in den bisherigen Sessions (mit Claude Code, 25.10.–16.11.2026) herausgefunden, geändert, gemessen und entschieden wurde. Lies es ganz, bevor du etwas änderst. Die Abschnitte 11 (Spielregeln) und 10 (Lessons learned) sind verbindlich.
 
 ---
 
@@ -84,11 +84,11 @@ Frontend pollt alle 2 s GET /api/search/{id}; bei "completed" öffnet es
 | `requirements.txt` | fastapi 0.109, uvicorn 0.27, selenium 4.17.2, pandas 2.2.3, numpy 2.0.0, googlemaps, anthropic>=0.34, bs4, lxml u. a. |
 | `.dockerignore` | `.git`, `.netlify`, `__pycache__`, `*.pyc`, `results`, `favorites.db`, `*.bat`, `PROJECT_SUMMARY.md` |
 | `.gitignore` | `.netlify`, `__pycache__/`, `*.pyc`, `favorites.db`, `results/` |
-| `start_server.bat` | Lokaler Start auf Port 8000 mit `--reload`. Installiert nur einen **Teil** der Abhängigkeiten (siehe 9.3). |
+| `start_server.bat` | Lokaler Start auf Port 8000 mit `--reload`. Installiert seit 16.11. alle Abhängigkeiten aus `requirements.txt` (in das System-Python). |
 | `expedia_searcher.py`, `hotelscom_searcher.py` | Alt, vom Web-Flow nicht mehr benutzt (durch Google Hotels ersetzt). |
 | `railway.json`, `Aptfile`, `runtime.txt` (`python-3.11.9`) | Altlasten früherer Hostings. Docker ignoriert sie. |
 | `WEBAPP_README.md`, `WEBAPP_INSTALLATION.txt`, `WEBAPP_FILES_LIST.txt`, `webapp_gitignore.txt` | Alte Doku (Januar 2026), teils veraltet. |
-| `__pycache__/airbnb_searcher.cpython-312.pyc`, `results/config_*.json` (4 Stück) | **Versehentlich getrackt**, obwohl inzwischen in `.gitignore`. Kandidat für `git rm --cached` (siehe 8). |
+| `__pycache__/…pyc`, `results/config_*.json` | Waren versehentlich getrackt; am 16.11. aus dem Index genommen (`git rm --cached`). `.venv/` und `venv/` stehen jetzt in `.gitignore` und `.dockerignore`. |
 
 Untracked: `PROJECT_SUMMARY.md` (Miroslavs Datei, **nie committen**), `favorites.db` (lokal, ignoriert), `results/` (lokal, ignoriert), `HANDOFF_CODEX.md` (diese Datei).
 
@@ -167,15 +167,16 @@ Untracked: `PROJECT_SUMMARY.md` (Miroslavs Datei, **nie committen**), `favorites
 - **URL:** `https://www.airbnb.ch/s/<ort>/homes?checkin=&checkout=&adults=&min_bedrooms=&price_max=` plus Typfilter (`property_type_id[]` bzw. `room_types[]`) und Pflicht-Ausstattungs-Codes (`amenities[]`: Pool 7, Whirlpool 25, Sauna 325, Kamin 27, Parkplatz 9).
 - **Ablauf in `search()` (`:689`):**
   1. Cookie-Banner wegklicken.
-  2. Pro Seite `[itemprop='itemListElement']` auslesen (`extract_listing_data`, `:188`). Das kostet **rund 15 WebDriver-Calls pro Karte und ist noch nicht gebündelt**.
+  2. Pro Seite alle `[itemprop='itemListElement']` in **einem** Call lesen (`read_cards()` mit `CARDS_SNAPSHOT_JS`), dann `extract_listing_data(card)` auf dem Snapshot. Früher waren es rund 12 WebDriver-Calls pro Karte.
   3. Den „Weiter“-Button bis `max_pages` klicken.
   4. Gesamtpreis in Preis pro Nacht umrechnen.
   5. Optional Google-Maps-Distanzen berechnen und danach sortieren.
-  6. Für die ersten `max_results` Treffer `get_listing_details()` (`:370`) aufrufen. Das ist ein Detailseiten-Load im selben Tab mit `WebDriverWait` 30 s. Bilder, Reviews und Ausstattung werden seit `76b3c42` mit je einem `execute_script` gelesen.
+  6. Für die ersten `max_results` Treffer `get_listing_details()` aufrufen. Das ist ein Detailseiten-Load im selben Tab mit `WebDriverWait` 30 s (Poll alle 2 s). Danach liest **ein** `execute_async_script` (`DETAIL_SNAPSHOT_JS`) Bilder, Reviews, Beschreibung, Kopfzeile, Seitentext und Ausstattung, nach dem Klick auf „Alle Ausstattungsmerkmale“.
   7. KI-Analyse ab 3 Reviews, sofern ein Key gesetzt ist.
   8. Filter anwenden.
 - **Render:** rund 45 min für 15 Treffer. Etwa die Hälfte der Detailseiten läuft in den Timeout; diesen Treffern fehlen Bilder und Ausstattung, die Ergebnisse sind aber echt.
-- **Größter Hebel:** `extract_listing_data` wie bei Booking in **ein** JS-Snapshot pro Karte (oder einmal für alle Karten) umbauen und Detailseiten in `LOW_MEMORY` begrenzen. Siehe 8.2.
+- **Seit 16.11. gebündelt** (8.2). Lokal: 66 statt 714 WebDriver-Calls für 15 Treffer, gleiche Daten. Die Render-Zeit nach dem Umbau ist noch nicht gemessen. Was danach noch Zeit kostet, sind die 15 Detailseiten-Loads; die Hälfte lief auf Render in den Page-Load-Timeout.
+- **Seitentext:** Er enthält auch den versteckten Buchungskalender. Muster für Zahlen deshalb nie über Zeilen hinweg und mit Längenbegrenzung schreiben, sonst gibt „Dezember 2026\nGäste“ 2026 Gäste.
 
 ### 6.2 Booking.com (`booking_searcher.py`)
 - **URL** (`build_search_url`, `:59`): `searchresults.de.html?ss=<location>&checkin&checkout&group_adults&no_rooms&group_children&price=CHF-0-CHF-<max>`. Dazu kommen:
@@ -249,16 +250,17 @@ Die ursprünglichen Ursachen des Render-Hängers waren:
    - Weitere Codes: `999` ist Selbstverpflegung (der alte Code nutzte es fälschlich für Frühstück), `8` ist Frühstück und Mittagessen.
    - Die UI sagt jetzt „nur Booking.com“; Google Hotels filtert nicht nach Verpflegung.
    - Auf Render wirkt der Filter nicht, weil Booking dort blockiert ist (8.14).
-2. **Airbnb zu langsam auf Render (rund 45 min).** `extract_listing_data` bündeln, analog zu `CARD_SNAPSHOT_JS`. Danach Detailseiten-Timeouts und -Anzahl in `LOW_MEMORY` überdenken. Vorher und nachher die WebDriver-Calls zählen (Methode: siehe 9.4).
-3. **Report-HTML unescaped** (`app.py:286–437`). Titel, Ort und URLs werden roh ins HTML geschrieben. `SEARCH_LOCATION` steht unescaped in einem JS-String-Literal (`app.py:390`); ein `'` im Ortsnamen bricht das Script, und es ist eine XSS-Lücke. `html.escape` bzw. `json.dumps` verwenden.
+2. ~~**Airbnb zu langsam auf Render (rund 45 min).**~~ **Gebündelt am 16.11.:** Suchkarten in einem Call pro Seite, Detailseite in einem Script. Lokal 714 → 66 WebDriver-Calls bei gleichen Daten. **Offen:** die Messung auf Render. Danach ggf. Anzahl und Timeout der Detailseiten in `LOW_MEMORY` überdenken.
+3. ~~**Report-HTML unescaped.**~~ **Erledigt am 16.11.:**
+   - Alle gescrapten Werte im Report werden escaped (`esc`, `esc_url` in `app.py`; nur http(s)-Links, sonst `#`).
+   - `SEARCH_LOCATION` und `allListings` laufen über `js_value` (JSON mit maskiertem `<`).
+   - Die KI-Analyse wird ebenfalls escaped (`review_analyzer.format_analysis_html`), ebenso die Favoritenseite (`esc`/`escUrl` in `favorites.html`).
+   - Mit präparierten Daten im Browser getestet.
 4. **Favoriten auf Render nicht persistent** (SQLite im flüchtigen Container). Für eine Lösung braucht es eine Entscheidung von Miroslav, z. B. eine externe DB oder Render Disk (kostenpflichtig).
-5. **Doppelte Route** `/results/{filename}` (`app.py:537` und `:565`). Die zweite ist toter Code; entfernen.
-6. **Versehentlich getrackt:** `__pycache__/airbnb_searcher.cpython-312.pyc` und `results/config_*.json`. Mit `git rm --cached` entfernen (nur nach Rückfrage committen).
+5. ~~**Doppelte Route** `/results/{filename}`.~~ **Erledigt am 16.11.:** Die zweite Route ist entfernt, die Pfadprüfung kommt jetzt vor der Existenzprüfung.
+6. ~~**Versehentlich getrackt.**~~ **Erledigt am 16.11.**
 7. **`review_analyzer.py:92`**: Die Modell-ID `claude-sonnet-4-20250514` ist alt und könnte abgeschaltet sein. Vor einer Aktivierung die aktuelle Anthropic-Modellliste prüfen (aktuelle Generation: Claude 5, z. B. `claude-sonnet-5-5`). Auf Render ist ohnehin kein Key gesetzt.
-8. **`start_server.bat`** installiert nur `fastapi uvicorn pydantic selenium pandas requests python-multipart aiofiles`.
-   - Es fehlt vor allem `anthropic`. (`googlemaps` steht zwar in `requirements.txt`, wird aber nirgends importiert; `google_maps_distance.py` nutzt `requests`.)
-   - Folge: `review_analyzer` importiert `anthropic` auf Modulebene, und `app.py` lädt es beim Report-Bau. Eine lokale Suche **mit Treffern** scheitert dann mit ImportError am Ende.
-   - Besser: `pip install -r requirements.txt`.
+8. ~~**`start_server.bat`** installierte nur einen Teil der Abhängigkeiten.~~ **Erledigt am 16.11.:** jetzt `python -m pip install -r requirements.txt`. (`googlemaps` steht in `requirements.txt`, wird aber nirgends importiert; `google_maps_distance.py` nutzt `requests`.)
 9. **Report-Links veralten:** Jede neue Suche löscht alle älteren `search_results_*.html`, alte Report-Links liefern danach 404. Der Report zeigt außerdem nur die ersten 50 Treffer.
 10. **`/tmp/booking_debug.html`** (`booking_searcher.py:549`), ebenso in den alten Expedia- und Hotels.com-Scrapern: Unter Windows existiert `/tmp` meist nicht; der Fehler wird abgefangen. Besser wäre `tempfile.gettempdir()` wie bei Google Hotels.
 11. **CORS:** `allow_origins=["*"]` zusammen mit `allow_credentials=True`. Funktioniert, ist aber unsauber; auf die Vercel-Domain plus localhost einschränken.
@@ -269,6 +271,11 @@ Die ursprünglichen Ursachen des Render-Hängers waren:
     - Booking nur lokal nutzen (`start_server.bat`);
     - anderes Hosting.
     - **Kein** Umgehen des Bot-Schutzes (Proxies, Stealth, Captcha-Lösen o. Ä.).
+15. ~~**Airbnb-Pflicht-Ausstattung gab immer 0 Treffer.**~~ **Erledigt am 16.11.:**
+    - Ursache: `filter_results` verlangte `has_private_sauna` usw. Das wird nur mit `search_terms` in der Config gesetzt, und die Web-App schickt keine. Zudem prüfte schon der erste Filterdurchlauf, vor der Detailseite, die Ausstattung.
+    - Jetzt: Airbnb filtert die Pflicht-Ausstattung über die URL-Codes. Die Detailprüfung läuft nur noch mit `search_terms` und erst nach der Detailseite (`check_amenities`).
+    - Test (Sauna, Interlaken, 50 km): vorher 0, jetzt 6 Treffer.
+16. **Airbnb-Reviews werden nie gefunden.** `[data-review-id], .r1bctolv` trifft auf den Detailseiten nichts mehr; das war schon vor dem Umbau so (0 Reviews bei allen 15 Testtreffern). Deshalb läuft für Airbnb auch nie eine KI-Analyse. Neue Selektoren nötig.
 
 ---
 
@@ -280,7 +287,7 @@ Die ursprünglichen Ursachen des Render-Hängers waren:
 - **Chrome:** 157 lokal installiert. Selenium 4.17.2 holt den passenden Treiber über Selenium Manager (mit Chrome 156 getestet).
 - **Docker:** nutzt Python 3.12, daher lokal ebenfalls **3.12** empfohlen.
 
-### 9.2 Setup und Start (venv außerhalb des Repos, weil `.venv` weder in `.gitignore` noch in `.dockerignore` steht)
+### 9.2 Setup und Start (`.venv/` im Repo ist seit 16.11. ignoriert; die Befehle unten legen die venv in `%TEMP%` an)
 ```powershell
 py -3.12 -m venv "$env:TEMP\acc-venv"
 & "$env:TEMP\acc-venv\Scripts\python.exe" -m pip install -r "C:\Projekt\Airbnb Suche\webapp\requirements.txt"
@@ -388,7 +395,8 @@ Abgesehen von den Vercel-Checks auf GitHub gibt es nichts. Prüfung bisher: loka
 ## 13. Vorgeschlagene nächste Schritte für Codex (in dieser Reihenfolge, jeweils lokal testen, dann vor dem Push fragen)
 
 1. ~~Verpflegungsfilter durchreichen (8.1).~~ Erledigt.
-2. Doppelte Route entfernen und Report-HTML escapen (8.5, 8.3).
-3. Airbnb-Extraktion bündeln (8.2), mit Call-Zählung vorher und nachher. Danach **ein** Live-Test auf Render nur mit Airbnb, nach Absprache.
-4. Getrackte Junk-Dateien aus dem Index nehmen und `.gitignore`/`.dockerignore` um `.venv` ergänzen (8.6).
-5. `start_server.bat` auf `pip install -r requirements.txt` umstellen (8.8).
+2. ~~Doppelte Route entfernen und Report-HTML escapen (8.5, 8.3).~~ Erledigt.
+3. ~~Airbnb-Extraktion bündeln (8.2).~~ Erledigt. **Offen:** ein Live-Test auf Render nur mit Airbnb, nach Absprache.
+4. ~~Junk-Dateien aus dem Index, `.venv` ignorieren (8.6).~~ Erledigt.
+5. ~~`start_server.bat` reparieren (8.8).~~ Erledigt.
+6. Neu: Airbnb-Review-Selektoren erneuern (8.16).
