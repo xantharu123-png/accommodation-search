@@ -5,6 +5,7 @@ Sucht Airbnb-Unterkünfte mit erweiterten Filtern, die in der Web-UI nicht verf�
 """
 
 import json
+import os
 import time
 import re
 from datetime import datetime
@@ -384,9 +385,10 @@ class AirbnbSearcher:
         "picture img",  # Picture elements
     ]
 
-    # Reads everything get_listing_details needs in ONE async script (formerly ~15 round
-    # trips per listing, minutes each on Render Free). Same steps as before: images first,
-    # scroll to the middle so the reviews load, then open "Alle Ausstattungsmerkmale".
+    # Reads what get_listing_details needs in ONE async script (formerly ~15 round trips per
+    # listing, minutes each on Render Free) - only the whole-page text fallback is separate.
+    # Same steps as before: images first, scroll to the middle so the reviews load, then
+    # open "Alle Ausstattungsmerkmale".
     DETAIL_SNAPSHOT_JS = """
         const [imageSelectors, done] = arguments;
         const text = el => el.getClientRects().length ? (el.innerText || '').replace(/\\u00a0/g, ' ').trim() : '';
@@ -403,7 +405,6 @@ class AirbnbSearcher:
                 reviews: Array.from(document.querySelectorAll('[data-review-id], .r1bctolv')).slice(0, 30).map(el => el.innerText),
                 description: textOf("[data-section-id='DESCRIPTION_DEFAULT']"),
                 header: textOf("div[data-section-id='TITLE_DEFAULT']"),
-                body: text(document.body),
             };
             const finish = () => {
                 const section = document.querySelector("[data-section-id='AMENITIES_DEFAULT']");
@@ -528,10 +529,12 @@ class AirbnbSearcher:
                         details['bedrooms'] = 0
 
                 # Method 2: Look for "X bedrooms · Y guests" pattern in full page text.
-                # Number and word on the same line, at most 2 digits: the page text also holds
-                # the hidden booking calendar, and "Dezember 2026\nGäste" gave 2026 guests.
+                # Number and word on the same line, at most 2 digits: the page text can hold
+                # the booking calendar, and "Dezember 2026\nGäste" gave 2026 guests.
+                # Selenium's .text (not innerText in the snapshot): it only reads displayed
+                # elements, innerText of the whole page lays out hidden parts too.
                 if 'bedrooms' not in details or 'max_guests' not in details:
-                    page_text = snap['body']
+                    page_text = self.driver.find_element(By.TAG_NAME, "body").text
 
                     if 'bedrooms' not in details:
                         bedroom_match = re.search(r'\b(\d{1,2})[^\S\n]*(?:bedroom|Schlafzimmer)', page_text, re.IGNORECASE)
@@ -774,7 +777,15 @@ class AirbnbSearcher:
                     
                     print(f"  ✓ {len(page_results)} Listings erfolgreich extrahiert")
                     all_listings.extend(page_results)
-                    
+
+                    # Render Free (LOW_MEMORY): loading page 2 got the container killed, and
+                    # only the first max_results listings get details anyway (without Google
+                    # Maps sorting they are all from page 1)
+                    max_results = self.config['output']['max_results']
+                    if os.environ.get('LOW_MEMORY') == '1' and len(all_listings) >= max_results:
+                        print(f"  ✓ Genug Listings für {max_results} Treffer - keine weitere Seite")
+                        break
+
                     # Try to find and click "Next" button
                     if current_page < max_pages:
                         try:
