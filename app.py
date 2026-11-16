@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import traceback
 from datetime import datetime
+from html import escape
 from pathlib import Path
 import uuid
 
@@ -130,6 +131,22 @@ class ListNameUpdate(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     favorite_ids: List[int]
+
+
+def esc(value) -> str:
+    """Scraped text, safe inside HTML text and attribute values"""
+    return escape(str(value))
+
+
+def esc_url(value) -> str:
+    """Scraped link, safe inside href/src - anything but http(s) becomes '#'"""
+    url = str(value or '')
+    return esc(url) if url.startswith(('http://', 'https://')) else '#'
+
+
+def js_value(value) -> str:
+    """Python value as a JavaScript literal, safe inside a <script> block"""
+    return json.dumps(value).replace('<', '\\u003c')
 
 
 def run_search(search_id: str, params: SearchParams):
@@ -334,7 +351,7 @@ def run_search(search_id: str, params: SearchParams):
         <a href="/favorites.html" target="_blank">⭐ Meine Favoriten ansehen</a>
     </div>
     <h1>🏠 {len(all_results)} Unterkünfte gefunden</h1>
-    <p>Suche für: {params.location} | {params.check_in} - {params.check_out}</p>
+    <p>Suche für: {esc(params.location)} | {esc(params.check_in)} - {esc(params.check_out)}</p>
 """
             
             for i, listing in enumerate(all_results[:50], 1):
@@ -359,16 +376,16 @@ def run_search(search_id: str, params: SearchParams):
                 html_content += f"""
     <div class="listing" data-listing-index="{i}">
         <button class="favorite-btn" onclick="addToFavorites({i})">⭐ Zu Favoriten</button>
-        <h3>{i}. {listing.get('title', 'Unterkunft')}</h3>
-        <p><span class="platform">{platform}</span></p>
-        <p class="price">{listing.get('price_per_night', 'N/A')} CHF / Nacht</p>
-        <p class="rating">⭐ {listing.get('rating', 'N/A')} ({listing.get('num_reviews', 0)} Bewertungen)</p>
-        <p>📍 {listing.get('location', 'N/A')}</p>
-        <p>🛏️ {listing.get('bedrooms', 'N/A')} Schlafzimmer | 👥 {listing.get('max_guests', 'N/A')} Gäste</p>
+        <h3>{i}. {esc(listing.get('title', 'Unterkunft'))}</h3>
+        <p><span class="platform">{esc(platform)}</span></p>
+        <p class="price">{esc(listing.get('price_per_night', 'N/A'))} CHF / Nacht</p>
+        <p class="rating">⭐ {esc(listing.get('rating', 'N/A'))} ({esc(listing.get('num_reviews', 0))} Bewertungen)</p>
+        <p>📍 {esc(listing.get('location', 'N/A'))}</p>
+        <p>🛏️ {esc(listing.get('bedrooms', 'N/A'))} Schlafzimmer | 👥 {esc(listing.get('max_guests', 'N/A'))} Gäste</p>
 """
                 if listing.get('image_urls'):
                     for img_url in listing['image_urls'][:10]:  # Show up to 10 images
-                        html_content += f'<img src="{img_url}" />'
+                        html_content += f'<img src="{esc_url(img_url)}" />'
                 
                 # AI Review Analysis
                 if listing.get('reviews') and len(listing['reviews']) > 0:
@@ -380,7 +397,7 @@ def run_search(search_id: str, params: SearchParams):
                     html_content += analyzer.format_analysis_html(analysis)
                 
                 html_content += f"""
-        <p><a href="{listing.get('url', '#')}" target="_blank">🔗 Listing ansehen</a></p>
+        <p><a href="{esc_url(listing.get('url'))}" target="_blank">🔗 Listing ansehen</a></p>
     </div>
 """
             
@@ -389,10 +406,10 @@ def run_search(search_id: str, params: SearchParams):
 <script>
 // Report is served by the backend itself → same origin works locally and on Render
 const API_BASE_URL = '';
-const SEARCH_LOCATION = '""" + params.location + """';
+const SEARCH_LOCATION = """ + js_value(params.location) + """;
 
 // Store all listings data
-const allListings = """ + json.dumps([{
+const allListings = """ + js_value([{
     'title': l.get('title', 'N/A'),
     'price_per_night': l.get('price_per_night', 'N/A'),
     'rating': l.get('rating', 'N/A'),
@@ -540,14 +557,14 @@ async def get_search_status(search_id: str):
 async def get_results_file(filename: str):
     """Serve result files (HTML/CSV)"""
     file_path = RESULTS_DIR / filename
-    
+
+    # Security: ensure file is in results directory (checked before revealing whether it exists)
+    if file_path.resolve().parent != RESULTS_DIR.resolve():
+        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File nicht gefunden")
-    
-    # Security: ensure file is in results directory
-    if not str(file_path.resolve()).startswith(str(RESULTS_DIR.resolve())):
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
-    
+
     # For HTML: display inline (don't download)
     # For CSV: download
     if filename.endswith(".html"):
@@ -562,22 +579,6 @@ async def get_results_file(filename: str):
             media_type="text/csv",
             filename=filename
         )
-
-
-@app.get("/results/{filename}")
-async def get_result_file(filename: str):
-    """Download result file"""
-    
-    file_path = RESULTS_DIR / filename
-    
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File nicht gefunden")
-    
-    return FileResponse(
-        path=file_path,
-        media_type="text/html" if filename.endswith(".html") else "text/csv",
-        filename=filename
-    )
 
 
 @app.get("/health")

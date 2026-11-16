@@ -287,7 +287,17 @@
         let currentList = null;
         let allLists = [];
         let selectedFavorites = new Set();
-        
+
+        // Listing data and AI analyses repeat scraped text - escape before using innerHTML
+        function esc(value) {
+            return String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+        }
+
+        // Only http(s) links, everything else becomes '#'
+        function escUrl(value) {
+            return /^https?:\/\//.test(value || '') ? esc(value) : '#';
+        }
+
         // Load lists on page load
         window.addEventListener('load', () => {
             loadLists();
@@ -376,18 +386,18 @@
                 : 'https://via.placeholder.com/400x200?text=No+Image';
             
             card.innerHTML = `
-                <img src="${imageUrl}" alt="${listing.title || 'Unterkunft'}">
+                <img src="${escUrl(imageUrl)}" alt="${esc(listing.title || 'Unterkunft')}">
                 <div class="favorite-content">
-                    <input type="checkbox" onchange="toggleSelection(${favorite.id})" style="float: right;">
-                    <div class="favorite-platform">${listing.platform || 'Unknown'}</div>
-                    <div class="favorite-title">${listing.title || 'Unterkunft'}</div>
-                    <div class="favorite-price">${listing.price_per_night || 'N/A'} CHF / Nacht</div>
-                    <div class="favorite-rating">⭐ ${listing.rating || 'N/A'} (${listing.num_reviews || 0} Bewertungen)</div>
+                    <input type="checkbox" onchange="toggleSelection(${Number(favorite.id)})" style="float: right;">
+                    <div class="favorite-platform">${esc(listing.platform || 'Unknown')}</div>
+                    <div class="favorite-title">${esc(listing.title || 'Unterkunft')}</div>
+                    <div class="favorite-price">${esc(listing.price_per_night || 'N/A')} CHF / Nacht</div>
+                    <div class="favorite-rating">⭐ ${esc(listing.rating || 'N/A')} (${esc(listing.num_reviews || 0)} Bewertungen)</div>
                     <div class="favorite-actions">
-                        <button class="btn-view" onclick="window.open('${listing.url}', '_blank')">
+                        <button class="btn-view" data-url="${escUrl(listing.url)}" onclick="window.open(this.dataset.url, '_blank')">
                             🔗 Ansehen
                         </button>
-                        <button class="btn-delete" onclick="deleteFavorite(${favorite.id})">
+                        <button class="btn-delete" onclick="deleteFavorite(${Number(favorite.id)})">
                             🗑️ Löschen
                         </button>
                     </div>
@@ -442,26 +452,26 @@
             let html = `<h4>🤖 AI Review-Analyse ${cached ? '(Cached)' : ''}</h4>`;
             
             if (analysis.summary) {
-                html += `<p><strong>Zusammenfassung:</strong> ${analysis.summary}</p>`;
+                html += `<p><strong>Zusammenfassung:</strong> ${esc(analysis.summary)}</p>`;
             }
-            
+
             if (analysis.positive && analysis.positive.length > 0) {
                 html += '<p><strong>✅ Positiv:</strong></p><ul>';
-                analysis.positive.forEach(p => html += `<li>${p}</li>`);
+                analysis.positive.forEach(p => html += `<li>${esc(p)}</li>`);
                 html += '</ul>';
             }
-            
+
             if (analysis.negative && analysis.negative.length > 0) {
                 html += '<p><strong>⚠️ Zu beachten:</strong></p><ul>';
-                analysis.negative.forEach(n => html += `<li>${n}</li>`);
+                analysis.negative.forEach(n => html += `<li>${esc(n)}</li>`);
                 html += '</ul>';
             }
-            
+
             if (analysis.cleanliness || analysis.location || analysis.value) {
                 html += '<p><strong>Bewertungen:</strong></p>';
-                if (analysis.cleanliness) html += `<span>🧹 ${analysis.cleanliness}</span> `;
-                if (analysis.location) html += `<span>📍 ${analysis.location}</span> `;
-                if (analysis.value) html += `<span>💰 ${analysis.value}</span>`;
+                if (analysis.cleanliness) html += `<span>🧹 ${esc(analysis.cleanliness)}</span> `;
+                if (analysis.location) html += `<span>📍 ${esc(analysis.location)}</span> `;
+                if (analysis.value) html += `<span>💰 ${esc(analysis.value)}</span>`;
             }
             
             container.innerHTML = html;

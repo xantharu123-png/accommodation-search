@@ -6,6 +6,7 @@ Uses Claude API to analyze accommodation reviews
 
 import os
 import anthropic
+from html import escape
 from typing import List, Dict, Optional
 
 
@@ -129,40 +130,43 @@ Antworte NUR mit diesem JSON Format (ohne Markdown):
         Returns:
             HTML string
         """
+        # The analysis repeats guests' review text - escape it like any scraped text
+        esc = lambda value: escape(str(value))
+
         if "error" in analysis:
-            return f'<div style="color: #999; font-style: italic;">{analysis.get("summary", "Keine Analyse")}</div>'
-        
+            return f'<div style="color: #999; font-style: italic;">{esc(analysis.get("summary", "Keine Analyse"))}</div>'
+
         html = '<div style="background: #f0f7ff; padding: 15px; border-radius: 8px; margin: 15px 0;">'
         html += '<h4 style="margin: 0 0 10px 0; color: #667eea;">🤖 AI Review-Analyse</h4>'
-        
+
         # Summary
         if analysis.get('summary'):
-            html += f'<p style="margin: 5px 0;"><strong>Zusammenfassung:</strong> {analysis["summary"]}</p>'
-        
+            html += f'<p style="margin: 5px 0;"><strong>Zusammenfassung:</strong> {esc(analysis["summary"])}</p>'
+
         # Positive
         if analysis.get('positive'):
             html += '<p style="margin: 10px 0 5px 0;"><strong>✅ Positiv:</strong></p><ul style="margin: 0;">'
             for point in analysis['positive']:
-                html += f'<li>{point}</li>'
+                html += f'<li>{esc(point)}</li>'
             html += '</ul>'
-        
+
         # Negative
         if analysis.get('negative'):
             html += '<p style="margin: 10px 0 5px 0;"><strong>⚠️ Zu beachten:</strong></p><ul style="margin: 0;">'
             for point in analysis['negative']:
-                html += f'<li>{point}</li>'
+                html += f'<li>{esc(point)}</li>'
             html += '</ul>'
-        
+
         # Ratings
         html += '<p style="margin: 10px 0 5px 0;"><strong>Bewertungen:</strong></p>'
         html += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">'
-        
+
         if analysis.get('cleanliness'):
-            html += f'<span>🧹 Sauberkeit: <strong>{analysis["cleanliness"]}</strong></span>'
+            html += f'<span>🧹 Sauberkeit: <strong>{esc(analysis["cleanliness"])}</strong></span>'
         if analysis.get('location'):
-            html += f'<span>📍 Lage: <strong>{analysis["location"]}</strong></span>'
+            html += f'<span>📍 Lage: <strong>{esc(analysis["location"])}</strong></span>'
         if analysis.get('value'):
-            html += f'<span>💰 Preis-Leistung: <strong>{analysis["value"]}</strong></span>'
+            html += f'<span>💰 Preis-Leistung: <strong>{esc(analysis["value"])}</strong></span>'
         
         html += '</div></div>'
         
